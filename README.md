@@ -20,8 +20,11 @@ log-wiki/
 ├── operations/              三个操作的定义
 │   ├── ingest.md            新增知识:raw 存档 → LLM 生成 draft 案例
 │   └── lint.md              健康检查:重复/缺字段/滞留草稿/断链/低置信
-└── scripts/
-    └── ingest.py            ingest 自动化脚本(接你的 LLM)
+├── scripts/
+│   ├── ingest.py            入库:原始记录 → raw 存档 + OpenAI 生成 draft 案例
+│   └── query.py             检索:粘一段报错 → 用 signatures 反向匹配相似案例(零依赖)
+├── config.example.yaml      OpenAI 配置模板(复制为 config.yaml 填密钥;后者不入库)
+└── requirements.txt         入库依赖(pyyaml + openai;检索无需依赖)
 ```
 
 ## 三个操作
@@ -46,12 +49,91 @@ log-wiki/
    一条错误的归档解法可能直接引发事故,这道闸不能省。
 2. **signatures 原文不可改**:检索全靠精确报错串命中,ingest/综合阶段都不得改写 signatures。
 
-## 快速上手
+## 环境准备(仅入库需要)
 
-1. 把你现有的 markdown 排查文档,按一案例一文件拆进 `wiki/cases/`,套用示例的 frontmatter。
-   原始出处一并存进 `raw/sources/`,case 的 `sources` 字段指回去。
-2. `scripts/ingest.py` 里接上你的 LLM,之后新故障 `python scripts/ingest.py note.txt --id INC-xxxx` 即可自动入库草稿。
-3. 接入 QMD 作检索层,或先用 ripgrep。
-4. 把 `SKILL.md` 装进你的 agent;并在 agent 系统提示里写死"凡日志/报错/故障问题必须先查本知识库"。
+```bash
+pip install -r requirements.txt        # pyyaml + openai
+cp config.example.yaml config.yaml     # 复制配置模板
+# 编辑 config.yaml 填入真实值(此文件已被 .gitignore 排除,不会提交):
+#   openai:
+#     api_key: "sk-..."                 # 必填
+#     base_url: "https://api.openai.com/v1"  # 可选,走代理/Azure/本地网关时改
+#     model: "gpt-4o"                   # 可选
 ```
+
+> 检索(`query.py`)零依赖,克隆即用,无需安装与配置。
+
+---
+
+## 一、如何写入知识(ingest)
+
+**触发时机**:一个故障被排查/解决后(工单关闭、postmortem 写完、或一段帮你定位的对话结束)。
+
+**① 跑入库脚本** —— 把原始记录(工单/Slack 线程/排查笔记,任意文本)喂进去:
+
+```bash
+python scripts/ingest.py 笔记.txt              # --id 缺省,用时间戳自动命名 raw 文件
+cat 笔记.txt | python scripts/ingest.py -       # 管道喂入同理
+python scripts/ingest.py 笔记.txt --id INC-5678 # 如有工单号也可手动指定
+```
+
+脚本自动做两件事:
+- 原文**原样**存档到 `raw/sources/<日期>-<标识>.md`(不可变层,永不改/删);
+- 调 OpenAI 抽取成结构化案例,落到 `wiki/cases/_drafts/<slug>.md`,`status: draft`。
+
+**② 人工复核(护栏①,不可省)** —— draft 还不是正式案例。打开草稿核对两处:
+- `signatures`(报错原文)必须与原始记录一字不差,**不得改写/翻译**(护栏②);
+- `solution` 解决方案是否准确。
+
+确认无误后升级为正式案例:
+
+```bash
+# 1) 编辑文件,把 status: draft 改成 status: verified
+# 2) 移出暂存区:
+git mv wiki/cases/_drafts/<slug>.md wiki/cases/<slug>.md
+```
+
+> 不想用 LLM?也可手写:照 `wiki/cases/db-connection-timeout.md` 的模板(frontmatter + 问题背景/定位过程/解决方案三段)手写案例,原文存进 `raw/sources/` 并让 `sources` 字段指回去。
+
+---
+
+## 二、如何检索知识(query)
+
+**① 一条命令检索(推荐)** —— 直接把整段报错粘进去,无需剥日志、无需记 `rg`:
+
+```bash
+python scripts/query.py "2026-06-13 15:10:33 ERROR HikariPool-1 - Connection is not available, request timed out after 30007ms"
+cat error.log | python scripts/query.py -        # 从文件/管道读
+```
+
+输出按三种情形:
+- **精确命中** → 打印案例标题、命中的 signature、可信度标注(verified/draft)、和「解决方案」全文;
+- **可能相关**(token 有重合但 signature 未精确命中)→ 列出候选,标注"需人工判断,勿照搬";
+- **无命中** → 走门控:明确告知"暂无相关案例",**绝不编造**,并提示排查后用 `ingest.py` 入库。
+
+> 原理:不去日志里猜锚点,而是拿每个案例自己精选的 `signatures` 反向匹配你的日志——带时间戳/毫秒数等噪声完全不影响命中。
+
+**② 接进 AI agent** —— 把 `SKILL.md` 装进你的 agent,并在系统提示里写死"凡日志/报错/故障问题必须先查本知识库"。agent 会自动走 SKILL.md 的 query 流程作答。
+
+**③ 加 QMD 语义层(可选)** —— 当你只有"症状描述"而非精确报错串时,`query.py`/`rg` 会漏。装 QMD 指向 `wiki/` 目录、注册其 MCP server 给 agent,即可用自然语言召回相似案例;新增案例自动增量索引。
+
+---
+
+## 三、定期体检(lint)
+
+入库后或定期跑,查重复 signatures / 缺字段 / 滞留草稿 / 断链 / 孤立 raw(规则见 `operations/lint.md`)。lint 只报告不改内容,问题仍走 ingest/复核流程修。
+
+---
+
+## 整体闭环
+
+```
+新故障解决 ──ingest.py──▶ raw/(原文存档) + wiki/cases/_drafts/(draft)
+                                    │
+                               人工复核(改 verified + 移出 _drafts)
+                                    ▼
+                             wiki/cases/(正式案例)
+                                    │
+贴报错查询 ◀──query.py / agent / QMD─┘
+                  无命中 → 明说"暂无案例" → 排查后回到 ingest,形成闭环
 ```
