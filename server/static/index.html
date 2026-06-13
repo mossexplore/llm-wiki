@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" />
   <script src="https://unpkg.com/vue@2/dist/vue.js"></script>
   <script src="https://unpkg.com/element-ui/lib/index.js"></script>
-  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
   <style>
     body { margin: 0; background: #f5f7fa; font-family: -apple-system, "PingFang SC", sans-serif; }
     #app { max-width: 960px; margin: 0 auto; padding: 24px; }
@@ -17,27 +16,37 @@
     .sig-row { display: flex; margin-bottom: 8px; }
     .sig-row .el-input { margin-right: 8px; }
     .hit { border-left: 3px solid #67c23a; padding: 8px 12px; margin-bottom: 12px; background: #f0f9eb; }
-    .hit pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; font-family: inherit; }
+    .hit pre, .stream pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+    .stream pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; max-height: 280px; overflow: auto; }
     .muted { color: #909399; font-size: 12px; }
   </style>
 </head>
 <body>
 <div id="app">
   <h1>log-wiki · 日志排查知识库</h1>
-  <p class="sub">写入知识(LLM 抽取 + 人工复核确认)与检索知识(粘报错查相似案例)</p>
+  <p class="sub">写入知识(LLM 流式抽取 + 人工复核确认)与检索知识(粘报错查相似案例)</p>
 
   <el-tabs v-model="tab">
     <!-- ============ 写入知识 ============ -->
     <el-tab-pane label="① 写入知识" name="ingest">
       <el-card class="card" shadow="never">
-        <div slot="header">第一步:选择原始排查记录文件,由模型抽取成结构化案例(此步不落库)</div>
+        <div slot="header">第一步:选择原始排查记录文件,模型流式抽取成结构化案例(此步不落库)</div>
         <el-upload
-          action="/api/ingest/preview" :limit="1" :show-file-list="true"
-          accept=".txt,.md,.log" :on-success="onPreview" :on-error="onUploadErr"
-          :before-upload="onUploadStart">
+          :auto-upload="true" :show-file-list="true" :limit="1"
+          accept=".txt,.md,.log" :http-request="doPreview">
           <el-button type="primary" icon="el-icon-upload2" :loading="previewing">选择文件并解析</el-button>
           <span slot="tip" class="el-upload__tip">支持 .txt / .md / .log,单个文件</span>
         </el-upload>
+
+        <div class="stream" v-if="streamText || previewing" style="margin-top:12px">
+          <div class="muted">
+            模型输出{{ previewing ? '(生成中…)' : '(已完成)' }}
+            <i v-if="previewing" class="el-icon-loading"></i>
+          </div>
+          <pre>{{ streamText }}</pre>
+        </div>
+        <el-alert v-if="parseErr" class="card" type="error" :closable="false" show-icon
+          title="解析失败" :description="parseErr" />
       </el-card>
 
       <el-card class="card" shadow="never" v-if="draft">
@@ -93,7 +102,6 @@
       </el-card>
 
       <el-card class="card" shadow="never" v-if="result">
-        <!-- 精确命中 -->
         <template v-if="result.mode === 'exact'">
           <el-alert :title="'精确命中 ' + result.hits.length + ' 个案例'" type="success" :closable="false" show-icon />
           <div v-for="(h, i) in result.hits" :key="i" class="hit" style="margin-top:12px">
@@ -105,14 +113,12 @@
             <pre>{{ h.solution }}</pre>
           </div>
         </template>
-        <!-- 模糊召回 -->
         <template v-else-if="result.mode === 'fuzzy'">
           <el-alert title="未精确命中。以下为可能相关案例(需人工判断,勿直接照搬)" type="warning" :closable="false" show-icon />
           <div v-for="(h, i) in result.hits" :key="i" class="hit" style="border-left-color:#e6a23c;background:#fdf6ec;margin-top:12px">
             <b>{{ h.title }}</b><span class="muted">　重合度 {{ h.score }}　{{ h.file }}</span>
           </div>
         </template>
-        <!-- 门控 -->
         <template v-else>
           <el-alert title="知识库中暂无相关案例" type="info" :closable="false" show-icon
             description="请勿编造解决方案;排查后可在「写入知识」页把本次结论入库。" />
@@ -123,50 +129,103 @@
 </div>
 
 <script>
+// 统一用浏览器内置 fetch,不依赖任何第三方请求库(避免 CDN 失败导致按钮失灵)
 new Vue({
   el: '#app',
   data: {
     tab: 'ingest',
     previewing: false, committing: false, querying: false,
+    streamText: '', parseErr: '',
     draft: null, committed: null,
     logText: '', result: null,
   },
   methods: {
-    onUploadStart() { this.previewing = true; this.committed = null; return true; },
-    onPreview(res) {
-      this.previewing = false;
-      this.draft = Object.assign({ ident: '' }, res);
-      if (!this.draft.signatures.length) this.draft.signatures = [''];
-      if (!this.draft.components.length) this.draft.components = [''];
-      this.$message.success('抽取完成,请复核后确认入库');
+    // el-upload 自定义上传:流式读取模型输出,边收边显示,结束后解析成表单
+    async doPreview(options) {
+      const file = options.file;
+      this.draft = null; this.committed = null; this.parseErr = '';
+      this.streamText = ''; this.previewing = true;
+      try {
+        const raw = await file.text();                 // 原文留在前端,入库时随 commit 提交
+        const fd = new FormData(); fd.append('file', file);
+        const resp = await fetch('/api/ingest/preview', { method: 'POST', body: fd });
+        if (!resp.ok) {
+          let d = ''; try { d = (await resp.json()).detail; } catch (e) {}
+          throw new Error(d || ('HTTP ' + resp.status));
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          this.streamText += decoder.decode(value, { stream: true });
+        }
+        if (this.streamText.includes('[ERROR]')) throw new Error(this.streamText);
+
+        const txt = this.streamText.replace(/^```json\s*|```\s*$/gm, '').trim();
+        const o = JSON.parse(txt);                     // json_object 模式,纯 JSON
+        this.draft = {
+          title: o.title || '', category: o.category || '未分类',
+          signatures: (o.signatures && o.signatures.length) ? o.signatures.slice() : [''],
+          components: (o.components && o.components.length) ? o.components.slice() : [''],
+          background: o.background || '', diagnosis: o.diagnosis || '', solution: o.solution || '',
+          ident: '', raw: raw,
+        };
+        options.onSuccess && options.onSuccess();
+        this.$message.success('解析完成,请复核后确认入库');
+      } catch (e) {
+        this.parseErr = String(e.message || e);
+        options.onError && options.onError(e);
+        this.$message.error('解析失败,详见下方');
+      } finally {
+        this.previewing = false;
+      }
     },
-    onUploadErr(err) {
-      this.previewing = false;
-      let msg = '解析失败';
-      try { msg = JSON.parse(err.message).detail || msg; } catch (e) {}
-      this.$message.error(msg);
-    },
-    commit() {
+
+    async commit() {
       const d = this.draft;
-      const payload = Object.assign({}, d, {
+      const payload = {
+        raw: d.raw, title: d.title, category: d.category,
         signatures: d.signatures.filter(s => s && s.trim()),
         components: d.components.filter(c => c && c.trim()),
+        background: d.background, diagnosis: d.diagnosis, solution: d.solution,
         ident: d.ident || null,
-      });
+      };
+      if (!payload.title.trim()) { this.$message.error('标题不能为空'); return; }
       if (!payload.signatures.length) { this.$message.error('至少保留一条 signature'); return; }
       this.committing = true;
-      axios.post('/api/ingest/commit', payload)
-        .then(r => { this.committed = r.data; this.draft = null;
-          this.$message.success('已真正写入本地知识库'); })
-        .catch(e => this.$message.error((e.response && e.response.data.detail) || '入库失败'))
-        .finally(() => this.committing = false);
+      try {
+        const r = await fetch('/api/ingest/commit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || '入库失败');
+        this.committed = data; this.draft = null; this.streamText = '';
+        this.$message.success('已真正写入本地知识库');
+      } catch (e) {
+        this.$message.error(String(e.message || e));
+      } finally {
+        this.committing = false;
+      }
     },
-    runQuery() {
+
+    async runQuery() {
+      if (!this.logText.trim()) { this.$message.warning('请输入报错信息'); return; }
       this.querying = true; this.result = null;
-      axios.post('/api/query', { log: this.logText })
-        .then(r => this.result = r.data)
-        .catch(e => this.$message.error((e.response && e.response.data.detail) || '检索失败'))
-        .finally(() => this.querying = false);
+      try {
+        const r = await fetch('/api/query', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ log: this.logText }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || '检索失败');
+        this.result = data;
+      } catch (e) {
+        this.$message.error(String(e.message || e));
+      } finally {
+        this.querying = false;
+      }
     },
   },
 });

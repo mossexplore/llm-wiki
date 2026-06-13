@@ -25,34 +25,33 @@ import query                                 # noqa: E402
 
 from fastapi import FastAPI, UploadFile, File, HTTPException  # noqa: E402
 from fastapi.staticfiles import StaticFiles                   # noqa: E402
-from fastapi.responses import FileResponse                    # noqa: E402
+from fastapi.responses import FileResponse, StreamingResponse  # noqa: E402
 from pydantic import BaseModel                                # noqa: E402
 
 app = FastAPI(title="log-wiki")
 STATIC = pathlib.Path(__file__).resolve().parent / "static"
 
 
-# ---------------- 1) 入库:预览(不落库) ----------------
+# ---------------- 1) 入库:流式预览(不落库) ----------------
 @app.post("/api/ingest/preview")
 async def ingest_preview(file: UploadFile = File(...)):
+    """流式返回模型抽取的 JSON 文本(逐段 chunk),前端实时显示、结束后解析成表单。
+
+    此步不写任何文件;原文(raw)由前端自己从文件读取,确认入库时再随 commit 一并提交。
+    """
     raw = (await file.read()).decode("utf-8", errors="replace")
     if not raw.strip():
         raise HTTPException(400, "文件内容为空")
-    try:
-        case = ingest.extract(raw)            # 调 OpenAI 抽取(失败会抛异常)
-    except Exception as e:                     # 凭证缺失 / 网络 / JSON 解析等
-        raise HTTPException(502, f"LLM 抽取失败:{e}")
-    # 统一字段,补默认值,交给前端展示并允许编辑
-    return {
-        "raw": raw,
-        "title": case.get("title", ""),
-        "category": case.get("category", "未分类"),
-        "signatures": case.get("signatures", []) or [],
-        "components": case.get("components", []) or [],
-        "background": case.get("background", ""),
-        "diagnosis": case.get("diagnosis", ""),
-        "solution": case.get("solution", ""),
-    }
+    prompt = ingest.EXTRACT_PROMPT.format(raw=raw)
+
+    def gen():
+        try:
+            for delta in ingest.stream_llm(prompt):
+                yield delta
+        except Exception as e:                 # 凭证缺失 / 网络等,以标记结尾让前端识别
+            yield f"\n[ERROR] {e}"
+
+    return StreamingResponse(gen(), media_type="text/plain; charset=utf-8")
 
 
 # ---------------- 2) 入库:确认落库 ----------------

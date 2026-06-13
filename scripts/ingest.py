@@ -44,33 +44,57 @@ _model = None
 
 
 def load_config() -> dict:
-    """读取本地 config.yaml 的 openai 段:api_key / base_url / model。"""
+    """读取本地 config.yaml 的 openai 段:api_key / base_url / model。
+
+    缺失时抛 RuntimeError(普通异常,便于 Web 端 except Exception 捕获并流式回传);
+    CLI 侧在 main() 里把它转成友好退出。
+    """
     if not CONFIG_PATH.exists():
-        sys.exit(f"缺少配置文件 {CONFIG_PATH};请复制 config.example.yaml 为 config.yaml 并填写。")
+        raise RuntimeError(f"缺少配置文件 {CONFIG_PATH};请复制 config.example.yaml 为 config.yaml 并填写。")
     cfg = (yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}).get("openai", {})
     if not cfg.get("api_key"):
-        sys.exit(f"配置文件 {CONFIG_PATH} 缺少 openai.api_key。")
+        raise RuntimeError(f"配置文件 {CONFIG_PATH} 缺少 openai.api_key。")
     return cfg
 
 
-def call_llm(prompt: str) -> str:
-    """用 OpenAI 把原始记录整理成结构化案例,返回模型文本输出(纯 JSON)。
-
-    URL / 模型 / 密钥全部来自本地 config.yaml(见 load_config)。
-    用 response_format=json_object 强制 JSON 输出;signatures 原文照搬的约束写在 EXTRACT_PROMPT 里。
-    """
+def _client_and_model():
+    """懒加载 OpenAI 客户端;URL/模型/密钥全部来自本地 config.yaml(见 load_config)。"""
     global _client, _model
     if _client is None:
         cfg = load_config()
         _model = cfg.get("model", "gpt-4o")
         _client = OpenAI(api_key=cfg["api_key"], base_url=cfg.get("base_url") or None)
-    resp = _client.chat.completions.create(
-        model=_model,
+    return _client, _model
+
+
+def call_llm(prompt: str) -> str:
+    """一次性返回:把原始记录整理成结构化案例(纯 JSON)。CLI 入库用。
+
+    用 response_format=json_object 强制 JSON;signatures 原文照搬的约束写在 EXTRACT_PROMPT 里。
+    """
+    client, model = _client_and_model()
+    resp = client.chat.completions.create(
+        model=model,
         temperature=0,
         response_format={"type": "json_object"},
         messages=[{"role": "user", "content": prompt}],
     )
     return resp.choices[0].message.content or ""
+
+
+def stream_llm(prompt: str):
+    """流式返回:逐段 yield 模型输出文本(增量)。Web 端实时展示用。"""
+    client, model = _client_and_model()
+    stream = client.chat.completions.create(
+        model=model,
+        temperature=0,
+        response_format={"type": "json_object"},
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+    )
+    for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
 
 
 def slugify(title: str) -> str:
@@ -131,7 +155,10 @@ def main():
     raw_path = archive_raw(raw, ident)                 # ① 存档不可变层
     raw_rel = str(raw_path.relative_to(ROOT))
 
-    case = extract(raw)                                # ② LLM 结构化
+    try:
+        case = extract(raw)                            # ② LLM 结构化
+    except RuntimeError as e:                           # 配置缺失等,友好退出
+        sys.exit(str(e))
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     out = DRAFTS_DIR / f"{slugify(case['title'])}.md"
     out.write_text(to_markdown(case, raw_rel), encoding="utf-8")
