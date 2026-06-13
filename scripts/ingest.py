@@ -93,13 +93,14 @@ def extract(raw: str) -> dict:
     return json.loads(text)
 
 
-def to_markdown(c: dict, raw_rel: str) -> str:
+def to_markdown(c: dict, raw_rel: str, status: str = "draft",
+                confidence: str = "medium") -> str:
     fm = {
         "id": slugify(c["title"]),
         "title": c["title"],
         "category": c.get("category", "未分类"),
-        "status": "draft",                       # 一律先 draft,待复核
-        "confidence": "medium",
+        "status": status,                        # CLI 默认 draft;web 端复核确认后传 verified
+        "confidence": confidence,
         "signatures": c.get("signatures", []),
         "components": c.get("components", []),
         "created": datetime.date.today().isoformat(),

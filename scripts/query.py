@@ -30,8 +30,14 @@ def _scalar(fm: str, key: str, default: str) -> str:
 
 
 def _signatures(fm: str) -> list:
-    """取 signatures 列表项:`signatures:`(可带行内注释)之后、下一个顶层 key 之前的 `- "..."` 行。"""
-    m = re.search(r"^signatures:[ \t]*(?:#[^\n]*)?\n(.*?)(?=^\S)", fm + "\n_:", re.M | re.S)
+    """取 signatures 列表项:`signatures:`(可带行内注释)之后、下一个顶层 key 之前的 `- ...` 行。
+
+    终止符用"下一个映射 key"(^\\w...:),而非"下一个非空行"——因为 PyYAML 生成的
+    列表项是顶格的 `- item`,用非空行会被误当成边界,导致 signatures 解析为空。
+    手写(缩进 `  - "..."`)与机器生成(顶格 `- item`)两种格式都能正确解析。
+    """
+    m = re.search(r"^signatures:[ \t]*(?:#[^\n]*)?\n(.*?)(?=^\w[\w-]*:|\Z)",
+                  fm + "\n_end:", re.M | re.S)
     if not m:
         return []
     return [_strip_comment(s)
@@ -80,35 +86,31 @@ def annotate(c) -> str:
     return " | ".join(notes)
 
 
-def main():
-    arg = sys.argv[1] if len(sys.argv) > 1 else "-"
-    log = sys.stdin.read() if arg == "-" else arg
-    if not log.strip():
-        sys.exit("用法: python query.py \"报错信息\"  (或用 - 从 stdin 读)")
+def search(log: str) -> dict:
+    """检索核心:返回结构化结果,供 CLI 与 web 后端共用。
 
+    返回 {"mode": "exact"|"fuzzy"|"none", "hits": [...]}。
+    mode=exact 时 hits 含 solution;mode=fuzzy 时仅候选(需人工判断)。
+    """
     log_low = log.lower()
     cases = load_cases()
-    if not cases:
-        sys.exit("wiki/cases/ 下暂无任何案例。")
 
     # 1) 精确命中:signature 作为子串出现在日志里
-    hits = []
+    exact = []
     for c in cases:
         matched = [s for s in c["signatures"] if s and s.lower() in log_low]
         if matched:
-            hits.append((c, matched))
-
-    if hits:
-        print(f"=== 精确命中 {len(hits)} 个案例 ===\n")
-        for c, matched in hits:
-            print(f"● {c['title']}")
-            print(f"  文件: {c['path'].relative_to(ROOT)}")
-            print(f"  命中 signature: {matched}")
-            note = annotate(c)
-            if note:
-                print(f"  可信度: {note}")
-            print(f"\n  【解决方案】\n{_indent(solution_of(c['body']))}\n")
-        return
+            exact.append({
+                "title": c["title"],
+                "file": str(c["path"].relative_to(ROOT)),
+                "matched": matched,
+                "status": c["status"],
+                "confidence": c["confidence"],
+                "note": annotate(c),
+                "solution": solution_of(c["body"]),
+            })
+    if exact:
+        return {"mode": "exact", "hits": exact}
 
     # 2) 模糊召回:token 重合度
     log_tokens = tokenize(log)
@@ -117,18 +119,41 @@ def main():
         sig_tokens = set().union(*(tokenize(s) for s in c["signatures"])) if c["signatures"] else set()
         score = len(log_tokens & (sig_tokens | tokenize(c["title"])))
         if score:
-            scored.append((score, c))
-    scored.sort(key=lambda x: -x[0])
-
+            scored.append({"title": c["title"], "file": str(c["path"].relative_to(ROOT)),
+                           "score": score, "status": c["status"]})
+    scored.sort(key=lambda x: -x["score"])
     if scored:
-        print("=== 未精确命中。以下为可能相关案例(仅供参考,需人工判断,勿直接照搬)===\n")
-        for score, c in scored[:3]:
-            print(f"● {c['title']}  (重合度 {score})  {c['path'].relative_to(ROOT)}")
-        print("\n建议:用上面案例的 signatures 反向核对你的报错,或接入 QMD 语义检索。")
-        return
+        return {"mode": "fuzzy", "hits": scored[:3]}
 
     # 3) 命中门控
-    print("知识库中暂无相关案例。请勿编造解决方案;排查后可用 scripts/ingest.py 把本次结论入库。")
+    return {"mode": "none", "hits": []}
+
+
+def main():
+    arg = sys.argv[1] if len(sys.argv) > 1 else "-"
+    log = sys.stdin.read() if arg == "-" else arg
+    if not log.strip():
+        sys.exit("用法: python query.py \"报错信息\"  (或用 - 从 stdin 读)")
+    if not load_cases():
+        sys.exit("wiki/cases/ 下暂无任何案例。")
+
+    res = search(log)
+    if res["mode"] == "exact":
+        print(f"=== 精确命中 {len(res['hits'])} 个案例 ===\n")
+        for h in res["hits"]:
+            print(f"● {h['title']}")
+            print(f"  文件: {h['file']}")
+            print(f"  命中 signature: {h['matched']}")
+            if h["note"]:
+                print(f"  可信度: {h['note']}")
+            print(f"\n  【解决方案】\n{_indent(h['solution'])}\n")
+    elif res["mode"] == "fuzzy":
+        print("=== 未精确命中。以下为可能相关案例(仅供参考,需人工判断,勿直接照搬)===\n")
+        for h in res["hits"]:
+            print(f"● {h['title']}  (重合度 {h['score']})  {h['file']}")
+        print("\n建议:用上面案例的 signatures 反向核对你的报错,或接入 QMD 语义检索。")
+    else:
+        print("知识库中暂无相关案例。请勿编造解决方案;排查后可用 scripts/ingest.py 把本次结论入库。")
 
 
 def _indent(text: str, n: int = 2) -> str:

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>log-wiki · 日志排查知识库</title>
+  <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" />
+  <script src="https://unpkg.com/vue@2/dist/vue.js"></script>
+  <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <style>
+    body { margin: 0; background: #f5f7fa; font-family: -apple-system, "PingFang SC", sans-serif; }
+    #app { max-width: 960px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 20px; color: #303133; }
+    .sub { color: #909399; font-size: 13px; margin-top: -8px; }
+    .card { margin-top: 16px; }
+    .sig-row { display: flex; margin-bottom: 8px; }
+    .sig-row .el-input { margin-right: 8px; }
+    .hit { border-left: 3px solid #67c23a; padding: 8px 12px; margin-bottom: 12px; background: #f0f9eb; }
+    .hit pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; font-family: inherit; }
+    .muted { color: #909399; font-size: 12px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <h1>log-wiki · 日志排查知识库</h1>
+  <p class="sub">写入知识(LLM 抽取 + 人工复核确认)与检索知识(粘报错查相似案例)</p>
+
+  <el-tabs v-model="tab">
+    <!-- ============ 写入知识 ============ -->
+    <el-tab-pane label="① 写入知识" name="ingest">
+      <el-card class="card" shadow="never">
+        <div slot="header">第一步:选择原始排查记录文件,由模型抽取成结构化案例(此步不落库)</div>
+        <el-upload
+          action="/api/ingest/preview" :limit="1" :show-file-list="true"
+          accept=".txt,.md,.log" :on-success="onPreview" :on-error="onUploadErr"
+          :before-upload="onUploadStart">
+          <el-button type="primary" icon="el-icon-upload2" :loading="previewing">选择文件并解析</el-button>
+          <span slot="tip" class="el-upload__tip">支持 .txt / .md / .log,单个文件</span>
+        </el-upload>
+      </el-card>
+
+      <el-card class="card" shadow="never" v-if="draft">
+        <div slot="header">
+          第二步:复核抽取结果 —— 可直接修改;确认无误后才真正入库
+          <el-tag size="mini" type="warning" style="margin-left:8px">signatures 请保持报错原文,勿改写</el-tag>
+        </div>
+        <el-form label-width="90px" size="small">
+          <el-form-item label="标题"><el-input v-model="draft.title" /></el-form-item>
+          <el-form-item label="类别"><el-input v-model="draft.category" style="width:200px" /></el-form-item>
+
+          <el-form-item label="signatures">
+            <div v-for="(s, i) in draft.signatures" :key="'s'+i" class="sig-row">
+              <el-input v-model="draft.signatures[i]" placeholder="报错原文 / 异常类全名 / 错误码" />
+              <el-button icon="el-icon-delete" @click="draft.signatures.splice(i,1)" />
+            </div>
+            <el-button size="mini" icon="el-icon-plus" @click="draft.signatures.push('')">添加 signature</el-button>
+          </el-form-item>
+
+          <el-form-item label="组件">
+            <div v-for="(c, i) in draft.components" :key="'c'+i" class="sig-row">
+              <el-input v-model="draft.components[i]" placeholder="服务 / 组件名" style="width:240px" />
+              <el-button icon="el-icon-delete" @click="draft.components.splice(i,1)" />
+            </div>
+            <el-button size="mini" icon="el-icon-plus" @click="draft.components.push('')">添加组件</el-button>
+          </el-form-item>
+
+          <el-form-item label="问题背景"><el-input type="textarea" :rows="3" v-model="draft.background" /></el-form-item>
+          <el-form-item label="定位过程"><el-input type="textarea" :rows="4" v-model="draft.diagnosis" /></el-form-item>
+          <el-form-item label="解决方案"><el-input type="textarea" :rows="4" v-model="draft.solution" /></el-form-item>
+          <el-form-item label="工单号"><el-input v-model="draft.ident" placeholder="可选;留空用时间戳命名 raw 文件" style="width:240px" /></el-form-item>
+
+          <el-form-item>
+            <el-button type="success" icon="el-icon-check" :loading="committing" @click="commit">确认入库</el-button>
+            <el-button @click="draft = null">取消</el-button>
+          </el-form-item>
+        </el-form>
+      </el-card>
+
+      <el-alert v-if="committed" class="card" type="success" :closable="false" show-icon
+        :title="'已入库:' + committed.case_file"
+        :description="'原文存档:' + committed.raw_file" />
+    </el-tab-pane>
+
+    <!-- ============ 检索知识 ============ -->
+    <el-tab-pane label="② 检索知识" name="query">
+      <el-card class="card" shadow="never">
+        <div slot="header">粘一段日志报错(带时间戳/毫秒数等噪声没关系),检索相似案例</div>
+        <el-input type="textarea" :rows="5" v-model="logText"
+          placeholder="例:2026-06-13 15:10:33 ERROR HikariPool-1 - Connection is not available, request timed out after 30007ms" />
+        <el-button type="primary" icon="el-icon-search" style="margin-top:12px"
+          :loading="querying" @click="runQuery">检索</el-button>
+      </el-card>
+
+      <el-card class="card" shadow="never" v-if="result">
+        <!-- 精确命中 -->
+        <template v-if="result.mode === 'exact'">
+          <el-alert :title="'精确命中 ' + result.hits.length + ' 个案例'" type="success" :closable="false" show-icon />
+          <div v-for="(h, i) in result.hits" :key="i" class="hit" style="margin-top:12px">
+            <b>{{ h.title }}</b>
+            <el-tag size="mini" :type="h.status === 'verified' ? 'success' : 'warning'" style="margin-left:8px">{{ h.status }}</el-tag>
+            <div class="muted">文件:{{ h.file }}　命中:{{ h.matched.join('；') }}</div>
+            <div class="muted" v-if="h.note">{{ h.note }}</div>
+            <div style="margin-top:6px"><b>解决方案</b></div>
+            <pre>{{ h.solution }}</pre>
+          </div>
+        </template>
+        <!-- 模糊召回 -->
+        <template v-else-if="result.mode === 'fuzzy'">
+          <el-alert title="未精确命中。以下为可能相关案例(需人工判断,勿直接照搬)" type="warning" :closable="false" show-icon />
+          <div v-for="(h, i) in result.hits" :key="i" class="hit" style="border-left-color:#e6a23c;background:#fdf6ec;margin-top:12px">
+            <b>{{ h.title }}</b><span class="muted">　重合度 {{ h.score }}　{{ h.file }}</span>
+          </div>
+        </template>
+        <!-- 门控 -->
+        <template v-else>
+          <el-alert title="知识库中暂无相关案例" type="info" :closable="false" show-icon
+            description="请勿编造解决方案;排查后可在「写入知识」页把本次结论入库。" />
+        </template>
+      </el-card>
+    </el-tab-pane>
+  </el-tabs>
+</div>
+
+<script>
+new Vue({
+  el: '#app',
+  data: {
+    tab: 'ingest',
+    previewing: false, committing: false, querying: false,
+    draft: null, committed: null,
+    logText: '', result: null,
+  },
+  methods: {
+    onUploadStart() { this.previewing = true; this.committed = null; return true; },
+    onPreview(res) {
+      this.previewing = false;
+      this.draft = Object.assign({ ident: '' }, res);
+      if (!this.draft.signatures.length) this.draft.signatures = [''];
+      if (!this.draft.components.length) this.draft.components = [''];
+      this.$message.success('抽取完成,请复核后确认入库');
+    },
+    onUploadErr(err) {
+      this.previewing = false;
+      let msg = '解析失败';
+      try { msg = JSON.parse(err.message).detail || msg; } catch (e) {}
+      this.$message.error(msg);
+    },
+    commit() {
+      const d = this.draft;
+      const payload = Object.assign({}, d, {
+        signatures: d.signatures.filter(s => s && s.trim()),
+        components: d.components.filter(c => c && c.trim()),
+        ident: d.ident || null,
+      });
+      if (!payload.signatures.length) { this.$message.error('至少保留一条 signature'); return; }
+      this.committing = true;
+      axios.post('/api/ingest/commit', payload)
+        .then(r => { this.committed = r.data; this.draft = null;
+          this.$message.success('已真正写入本地知识库'); })
+        .catch(e => this.$message.error((e.response && e.response.data.detail) || '入库失败'))
+        .finally(() => this.committing = false);
+    },
+    runQuery() {
+      this.querying = true; this.result = null;
+      axios.post('/api/query', { log: this.logText })
+        .then(r => this.result = r.data)
+        .catch(e => this.$message.error((e.response && e.response.data.detail) || '检索失败'))
+        .finally(() => this.querying = false);
+    },
+  },
+});
+</script>
+</body>
+</html>

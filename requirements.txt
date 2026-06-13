@@ -1,4 +1,9 @@
-# log-wiki ingest 管线依赖
+# log-wiki 依赖
 # 安装: pip install -r requirements.txt
-pyyaml>=6.0    # frontmatter 序列化(scripts/ingest.py)
-openai>=1.0    # OpenAI SDK,call_llm() 的结构化抽取
+pyyaml>=6.0            # frontmatter 序列化(scripts/ingest.py)
+openai>=1.0           # OpenAI SDK,call_llm() 的结构化抽取
+
+# Web 服务(server/server.py);纯命令行用 ingest.py/query.py 时可不装
+fastapi>=0.110
+uvicorn>=0.27
+python-multipart>=0.0.9   # FastAPI 文件上传需要

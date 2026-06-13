@@ -49,7 +49,25 @@ log-wiki/
    一条错误的归档解法可能直接引发事故,这道闸不能省。
 2. **signatures 原文不可改**:检索全靠精确报错串命中,ingest/综合阶段都不得改写 signatures。
 
-## 环境准备(仅入库需要)
+## Web 界面(免命令行)
+
+不想敲命令的话,用自带的 Web 界面完成"写入 + 检索":
+
+```bash
+pip install -r requirements.txt
+cp config.example.yaml config.yaml      # 填入 OpenAI api_key(写入功能需要)
+uvicorn server.server:app --port 8000   # 在仓库根目录运行
+# 浏览器打开 http://127.0.0.1:8000/
+```
+
+- **① 写入知识**:选文件 → 模型抽取出结构化案例 → 你在页面上复核/修改(尤其 signatures)→ 点「确认入库」才真正写入 `wiki/cases/`(护栏①:确认前不碰知识库)。
+- **② 检索知识**:粘一段日志报错(带时间戳/毫秒数等噪声没关系)→ 返回精确命中的「解决方案」、可能相关候选、或"暂无案例"门控。
+
+后端 FastAPI(`server/server.py`)直接复用 `scripts/ingest.py`、`scripts/query.py` 的逻辑;前端是单文件 Element UI 页面(`server/static/index.html`,CDN 引入、免构建)。检索接口不依赖 OpenAI,只有"写入"的抽取步骤才调模型。
+
+---
+
+## 环境准备(纯命令行用法)
 
 ```bash
 pip install -r requirements.txt        # pyyaml + openai
