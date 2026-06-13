@@ -8,8 +8,9 @@ ingest.py — LLM Wiki 入库管线(三层结构版)
 案例 frontmatter 的 sources 指回 raw/,保证可溯源。
 
 用法:
-    python ingest.py raw_note.txt --id INC-1234
-    cat note.txt | python ingest.py - --id INC-1234
+    python ingest.py raw_note.txt              # --id 缺省,用时间戳自动命名
+    python ingest.py raw_note.txt --id INC-1234  # 也可手动指定(如有工单号)
+    cat note.txt | python ingest.py -
 
 依赖: pip install pyyaml openai
 配置: 复制 config.example.yaml 为 config.yaml,填入 api_key / base_url / model。
@@ -116,13 +117,17 @@ def to_markdown(c: dict, raw_rel: str) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("source", help="原始记录文件路径,或 - 表示从 stdin 读")
-    ap.add_argument("--id", required=True, help="记录标识(如工单号),用于命名 raw 文件")
+    ap.add_argument("--id", default=None,
+                    help="记录标识(如工单号),用于命名 raw 文件;不传则用时间戳自动生成")
     args = ap.parse_args()
+
+    # 没有工单号系统时,用 时分秒 自动生成标识,保证同一天多次入库不重名
+    ident = args.id or datetime.datetime.now().strftime("%H%M%S")
 
     raw = sys.stdin.read() if args.source == "-" else \
         pathlib.Path(args.source).read_text(encoding="utf-8")
 
-    raw_path = archive_raw(raw, args.id)               # ① 存档不可变层
+    raw_path = archive_raw(raw, ident)                 # ① 存档不可变层
     raw_rel = str(raw_path.relative_to(ROOT))
 
     case = extract(raw)                                # ② LLM 结构化
