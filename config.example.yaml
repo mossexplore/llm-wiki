@@ -1,0 +1,6 @@
+# OpenAI 接口配置 —— 复制本文件为 config.yaml 后填写真实值
+# config.yaml 已被 .gitignore 排除,不会提交到仓库(避免密钥泄露)
+openai:
+  api_key: "sk-你的密钥"                  # 必填
+  base_url: "https://api.openai.com/v1"  # 可选;走代理/Azure/本地兼容网关时改这里,留空则用官方默认
+  model: "gpt-4o"                         # 可选;抽取用的模型名,默认 gpt-4o

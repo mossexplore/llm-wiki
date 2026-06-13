@@ -12,8 +12,8 @@ ingest.py — LLM Wiki 入库管线(三层结构版)
     cat note.txt | python ingest.py - --id INC-1234
 
 依赖: pip install pyyaml openai
-凭证: 设置环境变量 OPENAI_API_KEY。
-可选: INGEST_MODEL 覆盖模型(默认 gpt-4o);OPENAI_BASE_URL 指向兼容网关。
+配置: 复制 config.example.yaml 为 config.yaml,填入 api_key / base_url / model。
+      config.yaml 不入库(见 .gitignore);也可用 INGEST_CONFIG 指定其它路径。
 """
 import os, sys, json, re, argparse, datetime, pathlib, yaml
 from openai import OpenAI
@@ -37,21 +37,34 @@ EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原
 ---"""
 
 
-MODEL = os.environ.get("INGEST_MODEL", "gpt-4o")
+CONFIG_PATH = pathlib.Path(os.environ.get("INGEST_CONFIG", ROOT / "config.yaml"))
 _client = None
+_model = None
+
+
+def load_config() -> dict:
+    """读取本地 config.yaml 的 openai 段:api_key / base_url / model。"""
+    if not CONFIG_PATH.exists():
+        sys.exit(f"缺少配置文件 {CONFIG_PATH};请复制 config.example.yaml 为 config.yaml 并填写。")
+    cfg = (yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}).get("openai", {})
+    if not cfg.get("api_key"):
+        sys.exit(f"配置文件 {CONFIG_PATH} 缺少 openai.api_key。")
+    return cfg
 
 
 def call_llm(prompt: str) -> str:
     """用 OpenAI 把原始记录整理成结构化案例,返回模型文本输出(纯 JSON)。
 
-    凭证按 SDK 默认链解析:环境变量 OPENAI_API_KEY(及可选 OPENAI_BASE_URL)。
+    URL / 模型 / 密钥全部来自本地 config.yaml(见 load_config)。
     用 response_format=json_object 强制 JSON 输出;signatures 原文照搬的约束写在 EXTRACT_PROMPT 里。
     """
-    global _client
+    global _client, _model
     if _client is None:
-        _client = OpenAI()
+        cfg = load_config()
+        _model = cfg.get("model", "gpt-4o")
+        _client = OpenAI(api_key=cfg["api_key"], base_url=cfg.get("base_url") or None)
     resp = _client.chat.completions.create(
-        model=MODEL,
+        model=_model,
         temperature=0,
         response_format={"type": "json_object"},
         messages=[{"role": "user", "content": prompt}],
