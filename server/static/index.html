@@ -46,7 +46,7 @@
           <pre>{{ streamText }}</pre>
         </div>
         <el-alert v-if="parseErr" class="card" type="error" :closable="false" show-icon
-          title="解析失败" :description="parseErr" />
+          title="解析失败" :description="parseErr"></el-alert>
       </el-card>
 
       <el-card class="card" shadow="never" v-if="draft">
@@ -55,29 +55,29 @@
           <el-tag size="mini" type="warning" style="margin-left:8px">signatures 请保持报错原文,勿改写</el-tag>
         </div>
         <el-form label-width="90px" size="small">
-          <el-form-item label="标题"><el-input v-model="draft.title" /></el-form-item>
-          <el-form-item label="类别"><el-input v-model="draft.category" style="width:200px" /></el-form-item>
+          <el-form-item label="标题"><el-input v-model="draft.title"></el-input></el-form-item>
+          <el-form-item label="类别"><el-input v-model="draft.category" style="width:200px"></el-input></el-form-item>
 
           <el-form-item label="signatures">
             <div v-for="(s, i) in draft.signatures" :key="'s'+i" class="sig-row">
-              <el-input v-model="draft.signatures[i]" placeholder="报错原文 / 异常类全名 / 错误码" />
-              <el-button icon="el-icon-delete" @click="draft.signatures.splice(i,1)" />
+              <el-input v-model="draft.signatures[i]" placeholder="报错原文 / 异常类全名 / 错误码"></el-input>
+              <el-button icon="el-icon-delete" @click="draft.signatures.splice(i,1)"></el-button>
             </div>
             <el-button size="mini" icon="el-icon-plus" @click="draft.signatures.push('')">添加 signature</el-button>
           </el-form-item>
 
           <el-form-item label="组件">
             <div v-for="(c, i) in draft.components" :key="'c'+i" class="sig-row">
-              <el-input v-model="draft.components[i]" placeholder="服务 / 组件名" style="width:240px" />
-              <el-button icon="el-icon-delete" @click="draft.components.splice(i,1)" />
+              <el-input v-model="draft.components[i]" placeholder="服务 / 组件名" style="width:240px"></el-input>
+              <el-button icon="el-icon-delete" @click="draft.components.splice(i,1)"></el-button>
             </div>
             <el-button size="mini" icon="el-icon-plus" @click="draft.components.push('')">添加组件</el-button>
           </el-form-item>
 
-          <el-form-item label="问题背景"><el-input type="textarea" :rows="3" v-model="draft.background" /></el-form-item>
-          <el-form-item label="定位过程"><el-input type="textarea" :rows="4" v-model="draft.diagnosis" /></el-form-item>
-          <el-form-item label="解决方案"><el-input type="textarea" :rows="4" v-model="draft.solution" /></el-form-item>
-          <el-form-item label="工单号"><el-input v-model="draft.ident" placeholder="可选;留空用时间戳命名 raw 文件" style="width:240px" /></el-form-item>
+          <el-form-item label="问题背景"><el-input type="textarea" :rows="3" v-model="draft.background"></el-input></el-form-item>
+          <el-form-item label="定位过程"><el-input type="textarea" :rows="4" v-model="draft.diagnosis"></el-input></el-form-item>
+          <el-form-item label="解决方案"><el-input type="textarea" :rows="4" v-model="draft.solution"></el-input></el-form-item>
+          <el-form-item label="工单号"><el-input v-model="draft.ident" placeholder="可选;留空用时间戳命名 raw 文件" style="width:240px"></el-input></el-form-item>
 
           <el-form-item>
             <el-button type="success" icon="el-icon-check" :loading="committing" @click="commit">确认入库</el-button>
@@ -88,7 +88,7 @@
 
       <el-alert v-if="committed" class="card" type="success" :closable="false" show-icon
         :title="'已入库:' + committed.case_file"
-        :description="'原文存档:' + committed.raw_file" />
+        :description="'原文存档:' + committed.raw_file"></el-alert>
     </el-tab-pane>
 
     <!-- ============ 检索知识 ============ -->
@@ -96,14 +96,14 @@
       <el-card class="card" shadow="never">
         <div slot="header">粘一段日志报错(带时间戳/毫秒数等噪声没关系),检索相似案例</div>
         <el-input type="textarea" :rows="5" v-model="logText"
-          placeholder="例:2026-06-13 15:10:33 ERROR HikariPool-1 - Connection is not available, request timed out after 30007ms" />
+          placeholder="例:2026-06-13 15:10:33 ERROR HikariPool-1 - Connection is not available, request timed out after 30007ms"></el-input>
         <el-button type="primary" icon="el-icon-search" style="margin-top:12px"
           :loading="querying" @click="runQuery">检索</el-button>
       </el-card>
 
       <el-card class="card" shadow="never" v-if="result">
         <template v-if="result.mode === 'exact'">
-          <el-alert :title="'精确命中 ' + result.hits.length + ' 个案例'" type="success" :closable="false" show-icon />
+          <el-alert :title="'精确命中 ' + result.hits.length + ' 个案例'" type="success" :closable="false" show-icon></el-alert>
           <div v-for="(h, i) in result.hits" :key="i" class="hit" style="margin-top:12px">
             <b>{{ h.title }}</b>
             <el-tag size="mini" :type="h.status === 'verified' ? 'success' : 'warning'" style="margin-left:8px">{{ h.status }}</el-tag>
@@ -114,14 +114,14 @@
           </div>
         </template>
         <template v-else-if="result.mode === 'fuzzy'">
-          <el-alert title="未精确命中。以下为可能相关案例(需人工判断,勿直接照搬)" type="warning" :closable="false" show-icon />
+          <el-alert title="未精确命中。以下为可能相关案例(需人工判断,勿直接照搬)" type="warning" :closable="false" show-icon></el-alert>
           <div v-for="(h, i) in result.hits" :key="i" class="hit" style="border-left-color:#e6a23c;background:#fdf6ec;margin-top:12px">
             <b>{{ h.title }}</b><span class="muted">　重合度 {{ h.score }}　{{ h.file }}</span>
           </div>
         </template>
         <template v-else>
           <el-alert title="知识库中暂无相关案例" type="info" :closable="false" show-icon
-            description="请勿编造解决方案;排查后可在「写入知识」页把本次结论入库。" />
+            description="请勿编造解决方案;排查后可在「写入知识」页把本次结论入库。"></el-alert>
         </template>
       </el-card>
     </el-tab-pane>
@@ -129,7 +129,7 @@
 </div>
 
 <script>
-// 统一用浏览器内置 fetch,不依赖任何第三方请求库(避免 CDN 失败导致按钮失灵)
+// 统一用浏览器内置 fetch,不依赖任何第三方请求库
 new Vue({
   el: '#app',
   data: {
