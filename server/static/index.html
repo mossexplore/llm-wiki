@@ -30,13 +30,11 @@
     <!-- ============ 写入知识 ============ -->
     <el-tab-pane label="① 写入知识" name="ingest">
       <el-card class="card" shadow="never">
-        <div slot="header">第一步:选择原始排查记录文件,模型流式抽取成结构化案例(此步不落库)</div>
-        <el-upload
-          :auto-upload="true" :show-file-list="true" :limit="1"
-          accept=".txt,.md,.log" :http-request="doPreview">
-          <el-button type="primary" icon="el-icon-upload2" :loading="previewing">选择文件并解析</el-button>
-          <span slot="tip" class="el-upload__tip">支持 .txt / .md / .log,单个文件</span>
-        </el-upload>
+        <div slot="header">第一步:粘贴原始排查记录(工单/对话/笔记),模型流式抽取成结构化案例(此步不落库)</div>
+        <el-input type="textarea" :rows="8" v-model="rawInput"
+          placeholder="把原始排查记录粘贴到这里……&#10;例:大促高峰 order-service 一批接口疯狂 500,日志一直刷 HikariPool-1 - Connection is not available……"></el-input>
+        <el-button type="primary" icon="el-icon-cpu" style="margin-top:12px"
+          :loading="previewing" @click="doPreview">解析</el-button>
 
         <div class="stream" v-if="streamText || previewing" style="margin-top:12px">
           <div class="muted">
@@ -135,20 +133,22 @@ new Vue({
   data: {
     tab: 'ingest',
     previewing: false, committing: false, querying: false,
-    streamText: '', parseErr: '',
+    rawInput: '', streamText: '', parseErr: '',
     draft: null, committed: null,
     logText: '', result: null,
   },
   methods: {
-    // el-upload 自定义上传:流式读取模型输出,边收边显示,结束后解析成表单
-    async doPreview(options) {
-      const file = options.file;
+    // 粘贴文本 → 流式读取模型输出,边收边显示,结束后解析成表单
+    async doPreview() {
+      const raw = this.rawInput;
+      if (!raw.trim()) { this.$message.warning('请先粘贴原始排查记录'); return; }
       this.draft = null; this.committed = null; this.parseErr = '';
       this.streamText = ''; this.previewing = true;
       try {
-        const raw = await file.text();                 // 原文留在前端,入库时随 commit 提交
-        const fd = new FormData(); fd.append('file', file);
-        const resp = await fetch('/api/ingest/preview', { method: 'POST', body: fd });
+        const resp = await fetch('/api/ingest/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw: raw }),
+        });
         if (!resp.ok) {
           let d = ''; try { d = (await resp.json()).detail; } catch (e) {}
           throw new Error(d || ('HTTP ' + resp.status));
@@ -169,13 +169,11 @@ new Vue({
           signatures: (o.signatures && o.signatures.length) ? o.signatures.slice() : [''],
           components: (o.components && o.components.length) ? o.components.slice() : [''],
           background: o.background || '', diagnosis: o.diagnosis || '', solution: o.solution || '',
-          ident: '', raw: raw,
+          ident: '', raw: raw,                          // 原文留在前端,入库时随 commit 提交
         };
-        options.onSuccess && options.onSuccess();
         this.$message.success('解析完成,请复核后确认入库');
       } catch (e) {
         this.parseErr = String(e.message || e);
-        options.onError && options.onError(e);
         this.$message.error('解析失败,详见下方');
       } finally {
         this.previewing = false;
@@ -201,7 +199,7 @@ new Vue({
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || '入库失败');
-        this.committed = data; this.draft = null; this.streamText = '';
+        this.committed = data; this.draft = null; this.streamText = ''; this.rawInput = '';
         this.$message.success('已真正写入本地知识库');
       } catch (e) {
         this.$message.error(String(e.message || e));

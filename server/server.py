@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "scripts"))  # 复用 scripts/ 下的入库与检�
 import ingest                                # noqa: E402
 import query                                 # noqa: E402
 
-from fastapi import FastAPI, UploadFile, File, HTTPException  # noqa: E402
+from fastapi import FastAPI, HTTPException                    # noqa: E402
 from fastapi.staticfiles import StaticFiles                   # noqa: E402
 from fastapi.responses import FileResponse, StreamingResponse  # noqa: E402
 from pydantic import BaseModel                                # noqa: E402
@@ -33,15 +33,19 @@ STATIC = pathlib.Path(__file__).resolve().parent / "static"
 
 
 # ---------------- 1) 入库:流式预览(不落库) ----------------
+class PreviewReq(BaseModel):
+    raw: str   # 用户在前端文本框粘贴的原始排查记录
+
+
 @app.post("/api/ingest/preview")
-async def ingest_preview(file: UploadFile = File(...)):
+def ingest_preview(req: PreviewReq):
     """流式返回模型抽取的 JSON 文本(逐段 chunk),前端实时显示、结束后解析成表单。
 
-    此步不写任何文件;原文(raw)由前端自己从文件读取,确认入库时再随 commit 一并提交。
+    此步不写任何文件;原文(raw)留在前端,确认入库时再随 commit 一并提交。
     """
-    raw = (await file.read()).decode("utf-8", errors="replace")
+    raw = req.raw
     if not raw.strip():
-        raise HTTPException(400, "文件内容为空")
+        raise HTTPException(400, "内容为空")
     prompt = ingest.EXTRACT_PROMPT.format(raw=raw)
 
     def gen():
