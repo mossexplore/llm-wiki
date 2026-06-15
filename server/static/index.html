@@ -395,6 +395,41 @@
       return (s || 'case').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'case';
     }
 
+    function newRequestId() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID().slice(0, 12);
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
+
+    function clipText(text, size = 500) {
+      const s = String(text || '');
+      if (s.length <= size * 2) return s;
+      return s.slice(0, size) + '\\n...<snip>...\\n' + s.slice(-size);
+    }
+
+    function normalizeJsonText(text) {
+      let txt = String(text || '').trim();
+      txt = txt.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+      if (!txt.startsWith('{')) {
+        const first = txt.indexOf('{');
+        const last = txt.lastIndexOf('}');
+        if (first !== -1 && last > first) txt = txt.slice(first, last + 1).trim();
+      }
+      return txt;
+    }
+
+    function logPreviewFailure(info) {
+      console.error('[log-wiki] ingest preview parse failed', {
+        requestId: info.requestId,
+        httpStatus: info.httpStatus,
+        rawLength: info.rawLength,
+        streamLength: info.streamText.length,
+        normalizedLength: info.normalizedText.length,
+        message: info.error && info.error.message || String(info.error),
+        streamSample: clipText(info.streamText),
+        normalizedSample: clipText(info.normalizedText)
+      });
+    }
+
     function toDraft(o, raw) {
       return {
         title: o.title || '',
@@ -447,17 +482,22 @@
       if (!raw.trim()) { showToast('请先粘贴原始排查记录'); return; }
       Object.assign(state, { step: 2, previewing: true, streamText: '', parseErr: '', draft: null, committed: null });
       render();
+      const requestId = newRequestId();
+      let httpStatus = null;
+      let normalizedText = '';
       try {
         const resp = await fetch('/api/ingest/preview', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Request-ID': requestId },
           body: JSON.stringify({ raw })
         });
+        httpStatus = resp.status;
+        const responseRequestId = resp.headers.get('X-Request-ID') || requestId;
         if (!resp.ok) {
           if (noBackend(resp.status)) return demoPreview(raw);
           let detail = '';
           try { detail = (await resp.json()).detail; } catch (e) {}
-          throw new Error(detail || 'HTTP ' + resp.status);
+          throw new Error(`[request_id=${responseRequestId}] ${detail || 'HTTP ' + resp.status}`);
         }
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
@@ -470,14 +510,28 @@
           render();
         }
         if (acc.includes('[ERROR]')) throw new Error(acc);
-        const txt = acc.replace(/^```json\s*|```\s*$/gm, '').trim();
-        state.draft = toDraft(JSON.parse(txt), raw);
+        normalizedText = normalizeJsonText(acc);
+        state.draft = toDraft(JSON.parse(normalizedText), raw);
         state.step = 3;
         state.previewing = false;
+        console.info('[log-wiki] ingest preview parsed', {
+          requestId: responseRequestId,
+          rawLength: raw.length,
+          streamLength: acc.length,
+          normalizedLength: normalizedText.length
+        });
         render();
         showToast('解析完成,请复核后确认入库');
       } catch (e) {
-        state.parseErr = String(e && e.message || e);
+        logPreviewFailure({
+          requestId,
+          httpStatus,
+          rawLength: raw.length,
+          streamText: state.streamText,
+          normalizedText,
+          error: e
+        });
+        state.parseErr = `request_id=${requestId}\n${String(e && e.message || e)}`;
         state.previewing = false;
         render();
         showToast('解析失败,详见下方');

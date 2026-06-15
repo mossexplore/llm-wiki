@@ -13,15 +13,16 @@ ingest.py — LLM Wiki 入库管线(三层结构版)
     cat note.txt | python ingest.py -
 
 依赖: pip install pyyaml openai
-配置: 复制 config.example.yaml 为 config.yaml,填入 api_key / base_url / model。
-      config.yaml 不入库(见 .gitignore);也可用 INGEST_CONFIG 指定其它路径。
+配置: config.yaml / config.example.yaml 提供本地样例;也可用 INGEST_CONFIG 指定其它路径。
 """
-import os, sys, json, re, argparse, datetime, pathlib, yaml
+import os, sys, json, re, argparse, datetime, logging, pathlib, yaml
 from openai import OpenAI
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent  # log-wiki/
 RAW_DIR = ROOT / "raw" / "sources"
 DRAFTS_DIR = ROOT / "wiki" / "cases" / "_drafts"
+logger = logging.getLogger("log_wiki.ingest")
+logger.setLevel(logging.INFO)
 
 EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原始排查记录整理成结构化案例。
 **只输出 JSON**,不要额外文字。字段:
@@ -52,11 +53,17 @@ def load_config() -> dict:
     if not CONFIG_PATH.exists():
         raise RuntimeError(f"缺少配置文件 {CONFIG_PATH};请复制 config.example.yaml 为 config.yaml 并填写。")
     data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
-    if data.get("env", "dev") == "dev":
+    env = data.get("env", "dev")
+    if env == "dev":
         os.environ["NO_PROXY"] = "127.0.0.1"
     cfg = data.get("openai", {})
     if not cfg.get("api_key"):
         raise RuntimeError(f"配置文件 {CONFIG_PATH} 缺少 openai.api_key。")
+    logger.info(
+        "ingest.config.loaded env=%s config_path=%s base_url=%s model=%s no_proxy=%s",
+        env, CONFIG_PATH, cfg.get("base_url") or "<default>",
+        cfg.get("model", "gpt-4o"), os.environ.get("NO_PROXY", ""),
+    )
     return cfg
 
 

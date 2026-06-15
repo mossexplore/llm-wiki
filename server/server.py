@@ -14,7 +14,7 @@ server.py — log-wiki 的 Web 后端(FastAPI)
     uvicorn server.server:app --reload --port 8000
     # 浏览器打开 http://127.0.0.1:8000/
 """
-import sys, datetime, pathlib
+import sys, datetime, logging, pathlib, time, uuid
 from typing import List, Optional
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -23,13 +23,15 @@ sys.path.insert(0, str(ROOT / "scripts"))  # 复用 scripts/ 下的入库与检�
 import ingest                                # noqa: E402
 import query                                 # noqa: E402
 
-from fastapi import FastAPI, HTTPException                    # noqa: E402
+from fastapi import FastAPI, Header, HTTPException            # noqa: E402
 from fastapi.staticfiles import StaticFiles                   # noqa: E402
 from fastapi.responses import FileResponse, StreamingResponse  # noqa: E402
 from pydantic import BaseModel, Field                         # noqa: E402
 
 app = FastAPI(title="log-wiki")
 STATIC = pathlib.Path(__file__).resolve().parent / "static"
+logger = logging.getLogger("log_wiki.server")
+logger.setLevel(logging.INFO)
 
 SAMPLE_RAW = (
     "大促高峰 order-service 一批接口疯狂 500,日志一直刷 "
@@ -57,7 +59,7 @@ class PreviewReq(BaseModel):
 
 
 @app.post("/api/ingest/preview")
-def ingest_preview(req: PreviewReq):
+def ingest_preview(req: PreviewReq, x_request_id: Optional[str] = Header(default=None)):
     """流式返回模型抽取的 JSON 文本(逐段 chunk),前端实时显示、结束后解析成表单。
 
     此步不写任何文件;原文(raw)留在前端,确认入库时再随 commit 一并提交。
@@ -65,16 +67,40 @@ def ingest_preview(req: PreviewReq):
     raw = req.raw
     if not raw.strip():
         raise HTTPException(400, "内容为空")
+    request_id = x_request_id or uuid.uuid4().hex[:12]
     prompt = ingest.EXTRACT_PROMPT.format(raw=raw)
+    started = time.perf_counter()
+    logger.info(
+        "ingest.preview.start request_id=%s raw_len=%s prompt_len=%s",
+        request_id, len(raw), len(prompt),
+    )
 
     def gen():
+        chunk_count = 0
+        char_count = 0
         try:
             for delta in ingest.stream_llm(prompt):
+                chunk_count += 1
+                char_count += len(delta)
                 yield delta
+            logger.info(
+                "ingest.preview.done request_id=%s chunks=%s chars=%s elapsed_ms=%s",
+                request_id, chunk_count, char_count,
+                int((time.perf_counter() - started) * 1000),
+            )
         except Exception as e:                 # 凭证缺失 / 网络等,以标记结尾让前端识别
-            yield f"\n[ERROR] {e}"
+            logger.exception(
+                "ingest.preview.error request_id=%s chunks=%s chars=%s elapsed_ms=%s",
+                request_id, chunk_count, char_count,
+                int((time.perf_counter() - started) * 1000),
+            )
+            yield f"\n[ERROR][request_id={request_id}] {e}"
 
-    return StreamingResponse(gen(), media_type="text/plain; charset=utf-8")
+    return StreamingResponse(
+        gen(),
+        media_type="text/plain; charset=utf-8",
+        headers={"X-Request-ID": request_id},
+    )
 
 
 # ---------------- 2) 入库:确认落库 ----------------
