@@ -272,6 +272,23 @@
     .graph-list { display: grid; gap: 7px; }
     .graph-list button { text-align: left; padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-inset); color: var(--text-dim); font-size: 12px; border: 1px solid var(--line-faint); }
     .graph-list button:hover { color: var(--text); border-color: var(--line-strong); }
+    .knowledge-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
+    .knowledge-list { display: grid; gap: 8px; max-height: 680px; overflow: auto; padding-right: 2px; }
+    .knowledge-item {
+      width: 100%;
+      text-align: left;
+      display: grid;
+      gap: 6px;
+      padding: 11px 12px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--line-faint);
+      background: var(--surface-inset);
+      color: var(--text-dim);
+    }
+    .knowledge-item:hover { border-color: var(--line-strong); color: var(--text); }
+    .knowledge-item.on { border-color: var(--accent); background: var(--accent-soft); }
+    .knowledge-title { font-size: 13px; font-weight: 700; line-height: 1.35; }
+    .knowledge-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--text-mute); font-size: 11px; }
     .toast {
       position: fixed;
       bottom: 22px;
@@ -318,6 +335,7 @@
       .grid { grid-template-columns: 1fr; }
       .rail { position: static; }
       .graph-shell { grid-template-columns: 1fr; }
+      .knowledge-layout { grid-template-columns: 1fr; }
       .two { grid-template-columns: 1fr; }
       .card-head { align-items: flex-start; }
       .desktop-only { display: none; }
@@ -338,6 +356,7 @@
         </div>
       <div class="seg" aria-label="主模式">
         <button id="tab-ingest" class="on" type="button">写入知识</button>
+        <button id="tab-list" type="button">知识列表</button>
         <button id="tab-query" type="button">检索知识</button>
         <button id="tab-graph" type="button">知识图谱</button>
       </div>
@@ -378,6 +397,11 @@
       logText: '',
       querying: false,
       result: null,
+      knowledgeItems: [],
+      knowledgeLoading: false,
+      knowledgeSelected: '',
+      knowledgeSaving: false,
+      knowledgeError: '',
       graph: null,
       graphLoading: false,
       graphFilter: 'all',
@@ -394,6 +418,7 @@
     const root = document.getElementById('root');
     const toastEl = document.getElementById('toast');
     const tabIngest = document.getElementById('tab-ingest');
+    const tabList = document.getElementById('tab-list');
     const tabQuery = document.getElementById('tab-query');
     const tabGraph = document.getElementById('tab-graph');
 
@@ -469,6 +494,7 @@
 
     function toDraft(o, raw) {
       return {
+        file: o.file || '',
         title: o.title || '',
         category: o.category || '未分类',
         signatures: o.signatures && o.signatures.length ? o.signatures.slice() : [''],
@@ -484,9 +510,11 @@
     function setMode(mode) {
       state.mode = mode;
       tabIngest.classList.toggle('on', mode === 'ingest');
+      tabList.classList.toggle('on', mode === 'list');
       tabQuery.classList.toggle('on', mode === 'query');
       tabGraph.classList.toggle('on', mode === 'graph');
       if (mode === 'graph' && !state.graph && !state.graphLoading) loadGraph();
+      if (mode === 'list' && !state.knowledgeItems.length && !state.knowledgeLoading) loadKnowledgeList();
       render();
     }
 
@@ -512,6 +540,48 @@
         if (sampleResp.ok) state.sample = await sampleResp.json();
       } catch (e) {}
       render();
+    }
+
+    async function loadKnowledgeList(keepSelection = true) {
+      state.knowledgeLoading = true;
+      state.knowledgeError = '';
+      render();
+      try {
+        const r = await fetch('/api/knowledge');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        state.knowledgeItems = data.items || [];
+        if (!keepSelection || !state.knowledgeItems.some(item => item.file === state.knowledgeSelected)) {
+          state.knowledgeSelected = state.knowledgeItems[0] && state.knowledgeItems[0].file || '';
+        }
+        state.knowledgeLoading = false;
+        render();
+        if (state.knowledgeSelected) await selectKnowledge(state.knowledgeSelected);
+      } catch (e) {
+        state.knowledgeLoading = false;
+        state.knowledgeError = String(e && e.message || e);
+        render();
+        showToast('知识列表加载失败');
+      }
+    }
+
+    async function selectKnowledge(file) {
+      if (!file) return;
+      state.knowledgeSelected = file;
+      state.knowledgeError = '';
+      render();
+      try {
+        const r = await fetch('/api/knowledge/' + file.split('/').map(encodeURIComponent).join('/'));
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || '加载知识失败');
+        state.draft = toDraft(data, data.raw || '');
+        state.draft.file = data.file;
+        render();
+      } catch (e) {
+        state.knowledgeError = String(e && e.message || e);
+        render();
+        showToast('知识详情加载失败');
+      }
     }
 
     async function loadGraph() {
@@ -765,6 +835,7 @@
     async function commit() {
       const d = state.draft;
       if (!d) return;
+      if (state.mode === 'list') return updateKnowledge();
       const payload = {
         raw: d.raw,
         title: d.title,
@@ -805,6 +876,44 @@
         showToast('已真正写入本地知识库');
       } catch (e) {
         state.committing = false;
+        render();
+        showToast(String(e && e.message || e));
+      }
+    }
+
+    async function updateKnowledge() {
+      const d = state.draft;
+      if (!d || !state.knowledgeSelected) return;
+      const payload = {
+        raw: d.raw || '',
+        title: d.title,
+        category: d.category,
+        signatures: d.signatures.filter(s => s && s.trim()),
+        components: d.components.filter(c => c && c.trim()),
+        background: d.background,
+        diagnosis: d.diagnosis,
+        solution: d.solution,
+        ident: d.ident || null
+      };
+      if (!payload.title.trim()) { showToast('标题不能为空'); return; }
+      if (!payload.signatures.length) { showToast('至少保留一条 signature'); return; }
+      state.knowledgeSaving = true;
+      render();
+      try {
+        const r = await fetch('/api/knowledge/' + state.knowledgeSelected.split('/').map(encodeURIComponent).join('/'), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || '更新失败');
+        state.knowledgeSaving = false;
+        state.graph = null;
+        await loadKnowledgeList(true);
+        refreshMeta();
+        showToast('知识已更新入库');
+      } catch (e) {
+        state.knowledgeSaving = false;
         render();
         showToast(String(e && e.message || e));
       }
@@ -911,6 +1020,18 @@
     }
 
     function renderRail() {
+      if (state.mode === 'list') {
+        return `
+          <aside class="card rail">
+            <div class="kicker" style="margin-bottom:14px">KNOWLEDGE LIST</div>
+            <div style="display:grid;gap:12px">
+              ${modeNote('var(--accent)', '左侧列表', '点击任一知识后,右侧展示可编辑详情。')}
+              ${modeNote('var(--success)', '更新入库', '保存会覆盖对应案例 Markdown,并刷新索引。')}
+              ${modeNote('var(--warning)', '检索锚点', 'signatures 仍需保留报错原文。')}
+            </div>
+            ${statsHtml()}
+          </aside>`;
+      }
       if (state.mode === 'graph') {
         const graph = state.graph || { nodes: [], edges: [] };
         return `
@@ -1007,16 +1128,52 @@
       return renderDone();
     }
 
-    function renderReview() {
+    function renderKnowledgeMain() {
+      return `
+        <section class="knowledge-layout">
+          <aside class="card">
+            <div class="card-head">
+              <div><div class="kicker">KNOWLEDGE · VERIFIED</div><h3>知识列表</h3></div>
+              <button class="btn sm" id="reloadKnowledge" type="button">${state.knowledgeLoading ? iconSpin() : iconSearch()}刷新</button>
+            </div>
+            <div class="card-pad">
+              ${state.knowledgeError ? `<div class="result-block warn" style="margin-bottom:12px">${escapeHtml(state.knowledgeError)}</div>` : ''}
+              <div class="knowledge-list">
+                ${state.knowledgeLoading && !state.knowledgeItems.length ? `<div class="empty">${iconSpin()}<div>知识加载中</div></div>` : ''}
+                ${!state.knowledgeLoading && !state.knowledgeItems.length ? `<div class="empty">${iconInfo()}<div>暂无已入库知识</div></div>` : ''}
+                ${state.knowledgeItems.map(item => `
+                  <button class="knowledge-item ${state.knowledgeSelected === item.file ? 'on' : ''}" type="button" data-knowledge-file="${escapeHtml(item.file)}">
+                    <span class="knowledge-title">${escapeHtml(item.title)}</span>
+                    <span class="knowledge-meta">
+                      <span class="graph-chip">${escapeHtml(item.category || '未分类')}</span>
+                      <span class="mono">${escapeHtml(item.file)}</span>
+                    </span>
+                  </button>`).join('')}
+              </div>
+            </div>
+          </aside>
+          <div>
+            ${state.draft && state.knowledgeSelected ? renderReview({ listMode: true }) : `<section class="card"><div class="card-pad empty">${iconInfo()}<div>请选择左侧知识</div></div></section>`}
+          </div>
+        </section>`;
+    }
+
+    function renderReview(options = {}) {
       const d = state.draft || {};
+      const listMode = !!options.listMode;
+      const title = listMode ? '编辑知识详情,确认后更新入库' : '复核抽取结果,确认无误后入库';
+      const kicker = listMode ? 'KNOWLEDGE DETAIL · EDIT' : 'STEP 03 · HUMAN REVIEW';
+      const badge = listMode ? '<span class="badge info">编辑中</span>' : '<span class="badge warn">待确认</span>';
+      const saveBusy = listMode ? state.knowledgeSaving : state.committing;
+      const saveText = listMode ? '确认更新' : '确认入库';
       return `
         <section class="card">
-          <div class="card-head"><div><div class="kicker">STEP 03 · HUMAN REVIEW</div><h3>复核抽取结果,确认无误后入库</h3></div><span class="badge warn">待确认</span></div>
+          <div class="card-head"><div><div class="kicker">${kicker}</div><h3>${title}</h3>${listMode ? `<div class="mono muted" style="font-size:11px;margin-top:6px;word-break:break-all">${escapeHtml(d.file || state.knowledgeSelected)}</div>` : ''}</div>${badge}</div>
           <div class="card-pad" style="display:grid;gap:14px">
             <label class="lbl"><span>标题</span><input id="title" class="field" value="${escapeHtml(d.title || '')}"></label>
             <div class="two">
               <label class="lbl"><span>类别</span><input id="category" class="field" value="${escapeHtml(d.category || '')}"></label>
-              <label class="lbl"><span>工单号</span><input id="ident" class="field mono" value="${escapeHtml(d.ident || '')}" placeholder="可选,留空用时间戳"></label>
+              <label class="lbl"><span>${listMode ? '知识标识' : '工单号'}</span><input id="ident" class="field mono" value="${escapeHtml(d.ident || '')}" placeholder="${listMode ? '由文件名生成,仅作展示' : '可选,留空用时间戳'}" ${listMode ? 'disabled' : ''}></label>
             </div>
             <div class="lbl">
               <span>signatures <span class="mono" style="color:var(--text-faint);font-weight:400;text-transform:none;letter-spacing:0">报错原文 · 勿改写</span></span>
@@ -1046,8 +1203,8 @@
             </div>
             <label class="lbl"><span>解决方案</span><textarea id="solution" class="field" style="height:88px">${escapeHtml(d.solution || '')}</textarea></label>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:14px;border-top:1px solid var(--line-faint);flex-wrap:wrap">
-              <button class="btn" id="backToPaste" type="button">${iconBack()}上一步:原文</button>
-              <button class="btn primary" id="commit" type="button" ${state.committing ? 'disabled' : ''}>${state.committing ? iconSpin() : iconCheck()}确认入库</button>
+              ${listMode ? `<button class="btn" id="reloadKnowledgeDetail" type="button">${iconBack()}放弃修改</button>` : `<button class="btn" id="backToPaste" type="button">${iconBack()}上一步:原文</button>`}
+              <button class="btn primary" id="commit" type="button" ${saveBusy ? 'disabled' : ''}>${saveBusy ? iconSpin() : iconCheck()}${saveText}</button>
             </div>
           </div>
         </section>`;
@@ -1211,6 +1368,7 @@
 
     function bindEvents() {
       tabIngest.onclick = () => setMode('ingest');
+      tabList.onclick = () => setMode('list');
       tabQuery.onclick = () => setMode('query');
       tabGraph.onclick = () => setMode('graph');
       root.querySelectorAll('.step.click').forEach(el => el.onclick = () => setStep(Number(el.dataset.step)));
@@ -1231,8 +1389,11 @@
       bind('resetIngest', resetIngest);
       bind('goQuery', () => setMode('query'));
       bind('runQuery', runQuery);
+      bind('reloadKnowledge', () => loadKnowledgeList(false));
+      bind('reloadKnowledgeDetail', () => selectKnowledge(state.knowledgeSelected));
       bind('reloadGraph', loadGraph);
       bind('resetGraphLayout', resetGraphLayout);
+      root.querySelectorAll('[data-knowledge-file]').forEach(el => el.onclick = e => selectKnowledge(e.currentTarget.dataset.knowledgeFile));
 
       const graphSearch = document.getElementById('graphSearch');
       if (graphSearch) graphSearch.oninput = e => { state.graphSearch = e.target.value; render(); };
@@ -1264,11 +1425,16 @@
     }
 
     function render() {
-      root.innerHTML = `
-        <div class="grid">
-          ${renderRail()}
-          <div class="main">${state.mode === 'ingest' ? renderIngestMain() : (state.mode === 'query' ? renderQueryMain() : renderGraphMain())}</div>
-        </div>`;
+      const main = state.mode === 'ingest'
+        ? renderIngestMain()
+        : (state.mode === 'list' ? renderKnowledgeMain() : (state.mode === 'query' ? renderQueryMain() : renderGraphMain()));
+      root.innerHTML = state.mode === 'list'
+        ? `<div class="main">${main}</div>`
+        : `
+          <div class="grid">
+            ${renderRail()}
+            <div class="main">${main}</div>
+          </div>`;
       bindEvents();
     }
 

@@ -24,8 +24,12 @@ log-wiki/
 │   └── lint.md              健康检查:重复/缺字段/滞留草稿/断链/低置信
 ├── scripts/
 │   ├── ingest.py            入库:原始记录 → raw 存档 + OpenAI 生成 draft 案例
+│   ├── graph.py             图谱:从 wiki/ frontmatter 与链接构建知识节点/边
 │   ├── lint_okf.py          体检:OKF-ish 字段/断链/重复 signatures/孤立 raw
 │   └── query.py             检索:粘一段报错 → 用 signatures 反向匹配相似案例(零依赖)
+├── server/
+│   ├── server.py            FastAPI 后端:写入/列表/更新/检索/图谱接口
+│   └── static/index.html    单文件前端:写入知识、知识列表、检索知识、知识图谱
 ├── config.example.yaml      OpenAI 配置模板
 ├── config.yaml              本仓库提交的是样例配置;真实密钥请只放本地私有配置
 └── requirements.txt         入库依赖(pyyaml + openai;检索无需依赖)
@@ -55,7 +59,7 @@ log-wiki/
 
 ## Web 界面(免命令行)
 
-不想敲命令的话,用自带的 Web 界面完成"写入 + 检索":
+不想敲命令的话,用自带的 Web 界面完成"写入 + 编辑 + 检索 + 图谱浏览":
 
 ```bash
 pip install -r requirements.txt
@@ -64,10 +68,22 @@ uvicorn server.server:app --port 8000   # 在仓库根目录运行
 # 浏览器打开 http://127.0.0.1:8000/
 ```
 
-- **① 写入知识**:选文件 → 模型抽取出结构化案例 → 你在页面上复核/修改(尤其 signatures)→ 点「确认入库」才真正写入 `wiki/cases/`(护栏①:确认前不碰知识库)。
-- **② 检索知识**:粘一段日志报错(带时间戳/毫秒数等噪声没关系)→ 返回精确命中的「解决方案」、可能相关候选、或"暂无案例"门控。
+- **① 写入知识**:粘贴原始排查记录 → 模型流式抽取结构化案例 → 你在页面上复核/修改(尤其 signatures)→ 点「确认入库」才真正写入 `wiki/cases/`(护栏①:确认前不碰知识库)。
+- **② 知识列表**:读取已确认入库的 `wiki/cases/*.md`。左侧是案例列表,右侧复用「人工复核」表单展示详情;修改后点「确认更新」会覆盖对应案例 Markdown,刷新索引,并保留原 `sources` 与额外章节。
+- **③ 检索知识**:粘一段日志报错(带时间戳/毫秒数等噪声没关系)→ 返回精确命中的「解决方案」、可能相关候选、或"暂无案例"门控。
+- **④ 知识图谱**:从 cases / concepts / tags / components / raw sources 构建可拖拽图谱,用于查看案例、组件、标签和原始记录之间的关系。
 
-后端 FastAPI(`server/server.py`)直接复用 `scripts/ingest.py`、`scripts/query.py` 的逻辑;前端是单文件 Element UI 页面(`server/static/index.html`,CDN 引入、免构建)。检索接口不依赖 OpenAI,只有"写入"的抽取步骤才调模型。
+后端 FastAPI(`server/server.py`)直接复用 `scripts/ingest.py`、`scripts/query.py`、`scripts/graph.py` 的逻辑;前端是单文件页面(`server/static/index.html`,免构建)。检索与知识列表不依赖 OpenAI,只有"写入"的抽取步骤才调模型。
+
+主要接口:
+
+- `POST /api/ingest/preview`:流式抽取 JSON,仅预览,不落库。
+- `POST /api/ingest/commit`:确认入库,写 `raw/sources/` 与 `wiki/cases/`。
+- `GET /api/knowledge`:查询已入库知识列表。
+- `GET /api/knowledge/{case_file}`:读取单条知识详情。
+- `PUT /api/knowledge/{case_file}`:更新单条知识并刷新索引。
+- `POST /api/query`:按日志报错检索知识。
+- `GET /api/graph`:构建知识图谱数据。
 
 ---
 
