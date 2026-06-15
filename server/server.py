@@ -21,6 +21,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))  # 复用 scripts/ 下的入库与检索逻辑
 
 import ingest                                # noqa: E402
+import graph                                 # noqa: E402
 import query                                 # noqa: E402
 
 from fastapi import FastAPI, Header, HTTPException            # noqa: E402
@@ -175,6 +176,11 @@ def kb_stats():
         "signatures": signatures,
         "updated": datetime.datetime.fromtimestamp(latest).isoformat(timespec="seconds") if latest else None,
     }
+
+
+@app.get("/api/graph")
+def knowledge_graph():
+    return graph.build_graph()
 
 
 # ---------------- 静态前端 ----------------
