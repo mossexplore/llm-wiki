@@ -21,13 +21,17 @@ from openai import OpenAI
 ROOT = pathlib.Path(__file__).resolve().parent.parent  # log-wiki/
 RAW_DIR = ROOT / "raw" / "sources"
 DRAFTS_DIR = ROOT / "wiki" / "cases" / "_drafts"
+WIKI_DIR = ROOT / "wiki"
+CASES_DIR = WIKI_DIR / "cases"
 logger = logging.getLogger("log_wiki.ingest")
 logger.setLevel(logging.INFO)
 
 EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原始排查记录整理成结构化案例。
 **只输出 JSON**,不要额外文字。字段:
 - title: 简短问题名
+- description: 单句摘要,用于索引和检索预览
 - category: 类别(数据库/内存/网络/中间件/配置 等)
+- tags: 字符串列表,短标签,如 database / hikari / timeout
 - signatures: 字符串列表 —— 用户最可能粘贴的报错原文、异常类全名、错误码。
   【必须原文照搬,不得改写、翻译或概括】这是检索命中的命门。
 - components: 涉及的服务/组件列表
@@ -42,6 +46,35 @@ EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原
 CONFIG_PATH = pathlib.Path(os.environ.get("INGEST_CONFIG", ROOT / "config.yaml"))
 _client = None
 _model = None
+
+
+def _description(c: dict) -> str:
+    desc = (c.get("description") or "").strip()
+    if desc:
+        return desc
+    for key in ("background", "diagnosis", "solution"):
+        value = (c.get(key) or "").strip()
+        if value:
+            return re.sub(r"\s+", " ", value)[:120]
+    return c.get("title", "")
+
+
+def _tags(c: dict) -> list:
+    tags = c.get("tags") or []
+    if isinstance(tags, str):
+        tags = [tags]
+    category = c.get("category")
+    if category:
+        tags.append(category)
+    tags.extend(c.get("components") or [])
+    seen = set()
+    out = []
+    for tag in tags:
+        tag = str(tag).strip()
+        if tag and tag.lower() not in seen:
+            seen.add(tag.lower())
+            out.append(tag)
+    return out
 
 
 def load_config() -> dict:
@@ -129,24 +162,99 @@ def extract(raw: str) -> dict:
 
 def to_markdown(c: dict, raw_rel: str, status: str = "draft",
                 confidence: str = "medium") -> str:
+    today = datetime.date.today().isoformat()
     fm = {
         "id": slugify(c["title"]),
+        "type": c.get("type", "Incident Case"),
         "title": c["title"],
+        "description": _description(c),
         "category": c.get("category", "未分类"),
+        "tags": _tags(c),
         "status": status,                        # CLI 默认 draft;web 端复核确认后传 verified
         "confidence": confidence,
         "signatures": c.get("signatures", []),
         "components": c.get("components", []),
-        "created": datetime.date.today().isoformat(),
+        "created": today,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "sources": [raw_rel],                    # 溯源指回 raw/
     }
     front = yaml.safe_dump(fm, allow_unicode=True, sort_keys=False)
     body = (
         f"## 问题背景\n{c.get('background','')}\n\n"
         f"## 定位过程\n{c.get('diagnosis','')}\n\n"
-        f"## 解决方案\n{c.get('solution','')}\n"
+        f"## 解决方案\n{c.get('solution','')}\n\n"
+        f"## Citations\n\n"
+        f"[1] [原始排查记录](/{raw_rel})\n"
     )
     return f"---\n{front}---\n\n{body}"
+
+
+def _read_frontmatter(path: pathlib.Path) -> dict:
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return {}
+    try:
+        _, fm, _ = text.split("---", 2)
+    except ValueError:
+        return {}
+    return yaml.safe_load(fm) or {}
+
+
+def _index_entry(path: pathlib.Path, base: pathlib.Path) -> str:
+    fm = _read_frontmatter(path)
+    title = fm.get("title") or path.stem
+    description = fm.get("description") or fm.get("category") or fm.get("type") or ""
+    rel = path.relative_to(base).as_posix()
+    suffix = f" - {description}" if description else ""
+    return f"* [{title}]({rel}){suffix}"
+
+
+def update_indexes() -> None:
+    """生成 OKF 风格 index.md,用于渐进式浏览 wiki bundle。"""
+    WIKI_DIR.mkdir(parents=True, exist_ok=True)
+    CASES_DIR.mkdir(parents=True, exist_ok=True)
+
+    case_paths = sorted(p for p in CASES_DIR.glob("*.md") if p.name not in ("index.md", "log.md"))
+    concept_dir = WIKI_DIR / "concepts"
+    concept_paths = sorted(concept_dir.glob("*.md")) if concept_dir.exists() else []
+    concept_paths = [p for p in concept_paths if p.name not in ("index.md", "log.md")]
+
+    case_lines = [_index_entry(path, CASES_DIR) for path in case_paths]
+    (CASES_DIR / "index.md").write_text(
+        "# 故障案例\n\n"
+        "已复核或待复核的单次故障案例。每个案例保留 signatures、sources 与解决方案。\n\n"
+        + ("\n".join(case_lines) if case_lines else "_暂无案例。_")
+        + "\n",
+        encoding="utf-8",
+    )
+
+    root_parts = [
+        "# log-wiki 知识目录",
+        "",
+        "这是一个 OKF-ish knowledge bundle: Markdown 文件 + YAML frontmatter + 普通 Markdown 链接。",
+        "",
+        "## Cases",
+        "",
+        "* [故障案例](cases/) - 单次事故记录,以 signatures 作为检索锚点。",
+    ]
+    if concept_paths:
+        root_parts.extend([
+            "",
+            "## Concepts",
+            "",
+            "* [通用概念](concepts/) - 跨案例综合出的排查规律。",
+        ])
+    (WIKI_DIR / "index.md").write_text("\n".join(root_parts) + "\n", encoding="utf-8")
+
+    if concept_dir.exists():
+        concept_lines = [_index_entry(path, concept_dir) for path in concept_paths]
+        (concept_dir / "index.md").write_text(
+            "# 通用概念\n\n"
+            "跨案例综合出的排查规律。概念页只辅助建立直觉,具体作答仍以 case 为准。\n\n"
+            + ("\n".join(concept_lines) if concept_lines else "_暂无概念。_")
+            + "\n",
+            encoding="utf-8",
+        )
 
 
 def main():
@@ -172,6 +280,7 @@ def main():
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     out = DRAFTS_DIR / f"{slugify(case['title'])}.md"
     out.write_text(to_markdown(case, raw_rel), encoding="utf-8")
+    update_indexes()
 
     print(f"原始记录已存档: {raw_rel}")
     print(f"案例草稿已生成: {out.relative_to(ROOT)} (status=draft,复核后升 verified)")

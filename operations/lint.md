@@ -2,9 +2,14 @@
 
 定期(或每次 ingest 后)运行,维持 wiki/ 的一致性与可检索性。可由脚本或 agent 执行。
 
+```bash
+python scripts/lint_okf.py
+```
+
 ## 检查项
 1. **重复/冲突 signatures**:多个案例声明了相同报错串 → 可能重复或需合并,人工裁决。
 2. **缺字段**:case 缺少 signatures / solution / sources 等必填项 → 标记待补。
+   同时检查 OKF-ish 最小要求:非保留 `.md` 文档必须有可解析 frontmatter 与 `type`。
 3. **滞留草稿**:`_drafts/` 中 status=draft 超过 N 天未复核 → 提醒处理(防止草稿长期被当正式案例)。
 4. **断链**:`sources` 指向的 raw/ 文件不存在,或 `related`/`cases` 指向的页不存在 → 修复链接。
 5. **孤立 raw**:raw/ 里有原始记录但没有对应 wiki 案例 → 可能漏 ingest。

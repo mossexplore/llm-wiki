@@ -133,6 +133,7 @@ def ingest_commit(req: CommitReq):
     slug = ingest.slugify(req.title)
     case_path = ROOT / "wiki" / "cases" / f"{slug}.md"
     case_path.write_text(md, encoding="utf-8")
+    ingest.update_indexes()
 
     return {
         "ok": True,

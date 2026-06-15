@@ -13,17 +13,21 @@ log-wiki/
 │       └── 2024-05-10-INC-1234.md
 ├── wiki/                    第二层:LLM 生成的结构化知识(单点真相源,agent 检索此层)
 │   ├── cases/               具体故障案例(三段式 + frontmatter,signatures 为检索锚点)
+│   │   ├── index.md         OKF 风格目录索引,ingest 后自动刷新
 │   │   └── db-connection-timeout.md
 │   │   └── _drafts/         入库草稿暂存(待复核)
 │   └── concepts/            跨案例综合的通用规律(辅助直觉,不替代具体案例)
+│       ├── index.md         OKF 风格目录索引
 │       └── connection-pool-exhaustion.md
 ├── operations/              三个操作的定义
 │   ├── ingest.md            新增知识:raw 存档 → LLM 生成 draft 案例
 │   └── lint.md              健康检查:重复/缺字段/滞留草稿/断链/低置信
 ├── scripts/
 │   ├── ingest.py            入库:原始记录 → raw 存档 + OpenAI 生成 draft 案例
+│   ├── lint_okf.py          体检:OKF-ish 字段/断链/重复 signatures/孤立 raw
 │   └── query.py             检索:粘一段报错 → 用 signatures 反向匹配相似案例(零依赖)
-├── config.example.yaml      OpenAI 配置模板(复制为 config.yaml 填密钥;后者不入库)
+├── config.example.yaml      OpenAI 配置模板
+├── config.yaml              本仓库提交的是样例配置;真实密钥请只放本地私有配置
 └── requirements.txt         入库依赖(pyyaml + openai;检索无需依赖)
 ```
 
@@ -55,7 +59,7 @@ log-wiki/
 
 ```bash
 pip install -r requirements.txt
-cp config.example.yaml config.yaml      # 填入 OpenAI api_key(写入功能需要)
+cp config.example.yaml config.yaml      # 如需真实写入,填入本地 OpenAI api_key
 uvicorn server.server:app --port 8000   # 在仓库根目录运行
 # 浏览器打开 http://127.0.0.1:8000/
 ```
@@ -72,7 +76,7 @@ uvicorn server.server:app --port 8000   # 在仓库根目录运行
 ```bash
 pip install -r requirements.txt        # pyyaml + openai
 cp config.example.yaml config.yaml     # 复制配置模板
-# 编辑 config.yaml 填入真实值(此文件已被 .gitignore 排除,不会提交):
+# 编辑本地私有配置填入真实值:
 #   openai:
 #     api_key: "sk-..."                 # 必填
 #     base_url: "https://api.openai.com/v1"  # 可选,走代理/Azure/本地网关时改
@@ -140,6 +144,10 @@ cat error.log | python scripts/query.py -        # 从文件/管道读
 ## 三、定期体检(lint)
 
 入库后或定期跑,查重复 signatures / 缺字段 / 滞留草稿 / 断链 / 孤立 raw(规则见 `operations/lint.md`)。lint 只报告不改内容,问题仍走 ingest/复核流程修。
+
+```bash
+python scripts/lint_okf.py
+```
 
 ---
 

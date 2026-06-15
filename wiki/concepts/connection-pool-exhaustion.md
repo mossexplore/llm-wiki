@@ -2,8 +2,11 @@
 id: connection-pool-exhaustion
 type: concept                 # 概念页:跨案例综合,非单一事故记录
 title: 连接池耗尽(通用规律)
+description: 连接池耗尽通常是慢查询、慢下游或连接泄漏长期占用连接后的表象。
+tags: [连接池, HikariCP, 数据库, 排查规律]
 status: verified
 confidence: medium            # 概念页由多案例综合而来,默认标 medium,提醒复核
+timestamp: 2024-05-10T00:00:00Z
 cases:                        # 关联的具体案例(综合来源)
   - wiki/cases/db-connection-timeout.md
 ---

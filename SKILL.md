@@ -9,13 +9,16 @@ description: >-
 
 # 日志问题定位知识库(LLM Wiki)
 
-本知识库采用 LLM Wiki 三层结构,**没有需要手工维护的索引**:
+本知识库采用 LLM Wiki 三层结构,索引文件由 ingest 自动维护,**无需手工维护索引**:
 
 ```
 raw/      不可变原始记录(工单/对话存档),永不修改,综合出错时回溯用
 wiki/     LLM 生成的结构化知识(单点真相源,agent 检索此层)
+          ├── index.md    OKF-ish 渐进式目录
           ├── cases/      具体故障案例(三段式 + frontmatter,signatures 为检索锚点)
+          │   └── index.md
           └── concepts/   跨案例综合的通用规律(辅助排查直觉,不替代具体案例)
+              └── index.md
 schema    即本 SKILL.md:定义结构、检索规则、维护操作
 ```
 
@@ -47,5 +50,5 @@ schema    即本 SKILL.md:定义结构、检索规则、维护操作
 
 - **ingest**(新增知识):见 `operations/ingest.md` / `scripts/ingest.py`。原始记录入 `raw/`,
   LLM 生成 `wiki/cases/` 草稿(status=draft)。
-- **lint**(健康检查):见 `operations/lint.md`。检查重复 signatures、缺字段、滞留草稿、孤立案例、低置信区域。
+- **lint**(健康检查):见 `operations/lint.md` / `scripts/lint_okf.py`。检查 OKF-ish 字段、重复 signatures、缺字段、断链、孤立案例、低置信区域。
 - 两道护栏始终生效:① draft→verified 需复核;② signatures 原文不可改写。

@@ -1,7 +1,10 @@
 ---
 id: db-connection-timeout
+type: Incident Case
 title: DB 连接超时 / 连接池耗尽导致接口大面积 500
+description: order-service 高峰期因慢查询长期占用 HikariCP 连接,导致连接池耗尽并批量 500。
 category: 数据库
+tags: [数据库, order-service, MySQL, HikariCP, 连接池, timeout]
 status: verified              # draft(自动入库,待复核) | verified(已人工复核)
 confidence: high              # high | medium | low —— 供 lint 浮现待补强区域
 signatures:                   # 检索锚点:报错原文/异常类全名/错误码,【原文照搬,综合时不可改写】
@@ -10,6 +13,7 @@ signatures:                   # 检索锚点:报错原文/异常类全名/错误
   - "Connection timed out"
 components: [order-service, MySQL, HikariCP]
 created: 2024-05-10
+timestamp: 2024-05-10T00:00:00Z
 sources:                      # 溯源:指回 raw/ 不可变层
   - raw/sources/2024-05-10-INC-1234.md
 related:                      # 交叉链接(wiki 层的综合能力,保守使用)
@@ -35,3 +39,7 @@ DB 实例规格未变,应用侧 HikariCP maximumPoolSize=20。
 
 ## 备注
 连接池耗尽常是表象,根因多在慢查询/慢下游/连接泄漏。先定位"谁占着连接不放"再决定是否扩容。
+
+## Citations
+
+[1] [原始排查记录](/raw/sources/2024-05-10-INC-1234.md)
