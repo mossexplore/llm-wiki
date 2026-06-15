@@ -341,6 +341,7 @@
     const state = {
       mode: 'ingest',
       step: 1,
+      maxStep: 1,
       rawInput: '',
       streamText: '',
       previewing: false,
@@ -452,10 +453,15 @@
     }
 
     function setStep(step) {
-      if (step <= state.step) {
+      if (step <= state.maxStep) {
         state.step = step;
         render();
       }
+    }
+
+    function goToStep(step) {
+      state.step = step;
+      state.maxStep = Math.max(state.maxStep, step);
     }
 
     async function refreshMeta() {
@@ -480,7 +486,7 @@
     async function doPreview() {
       const raw = state.rawInput;
       if (!raw.trim()) { showToast('请先粘贴原始排查记录'); return; }
-      Object.assign(state, { step: 2, previewing: true, streamText: '', parseErr: '', draft: null, committed: null });
+      Object.assign(state, { step: 2, maxStep: Math.max(state.maxStep, 2), previewing: true, streamText: '', parseErr: '', draft: null, committed: null });
       render();
       const requestId = newRequestId();
       let httpStatus = null;
@@ -512,7 +518,7 @@
         if (acc.includes('[ERROR]')) throw new Error(acc);
         normalizedText = normalizeJsonText(acc);
         state.draft = toDraft(JSON.parse(normalizedText), raw);
-        state.step = 3;
+        goToStep(3);
         state.previewing = false;
         console.info('[log-wiki] ingest preview parsed', {
           requestId: responseRequestId,
@@ -548,7 +554,7 @@
       }
       state.streamText = json;
       state.draft = toDraft(obj, raw);
-      state.step = 3;
+      goToStep(3);
       state.previewing = false;
       render();
       showToast('后端未连接 · 已载入演示数据');
@@ -581,7 +587,7 @@
         if (noBackend(r.status)) {
           const stamp = payload.ident || String(Date.now());
           state.committed = { case_file: 'wiki/cases/' + slug(payload.title) + '.md', raw_file: 'raw/sources/' + stamp + '.md', demo: true };
-          state.step = 4;
+          goToStep(4);
           state.committing = false;
           render();
           showToast('后端未连接 · 已演示入库结果');
@@ -590,7 +596,7 @@
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || '入库失败');
         state.committed = data;
-        state.step = 4;
+        goToStep(4);
         state.committing = false;
         render();
         refreshMeta();
@@ -641,7 +647,7 @@
     }
 
     function resetIngest() {
-      Object.assign(state, { step: 1, rawInput: '', streamText: '', parseErr: '', draft: null, committed: null });
+      Object.assign(state, { step: 1, maxStep: 1, rawInput: '', streamText: '', parseErr: '', draft: null, committed: null });
       render();
     }
 
@@ -675,6 +681,7 @@
         const cls = ['step'];
         if (d.n < state.step) cls.push('done', 'click');
         if (d.n === state.step) cls.push('active', 'click');
+        if (d.n > state.step && d.n <= state.maxStep) cls.push('click');
         return `
           <div class="${cls.join(' ')}" data-step="${d.n}">
             <div class="step-mark">
