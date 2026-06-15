@@ -102,8 +102,10 @@
         mask.className = 'modal-mask';
         mask.innerHTML =
           '<div class="modal-box" role="dialog" aria-modal="true">' +
-            (danger ? '<div class="modal-icon">' + iconTrash() + '</div>' : '') +
-            '<div class="modal-title">' + escapeHtml(title) + '</div>' +
+            '<div class="modal-head">' +
+              (danger ? '<div class="modal-icon">' + iconTrash() + '</div>' : '') +
+              '<div class="modal-title">' + escapeHtml(title) + '</div>' +
+            '</div>' +
             '<div class="modal-msg">' + escapeHtml(message) + '</div>' +
             '<div class="modal-actions">' +
               '<button class="btn" data-act="cancel">' + escapeHtml(cancelText) + '</button>' +
