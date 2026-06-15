@@ -54,6 +54,7 @@
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || '删除失败');
         if (state.knowledgeSelected === file) { state.knowledgeSelected = ''; state.draft = null; }
+        state.graph = null; state.graphSelected = '';   // 知识变更,图谱缓存失效,下次进图谱页重载
         showToast('已删除');
         await loadKnowledgeList(true);
         refreshMeta();
@@ -89,7 +90,7 @@
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || '更新失败');
         state.knowledgeSaving = false;
-        state.graph = null;
+        state.graph = null; state.graphSelected = '';   // 知识变更,图谱缓存失效
         await loadKnowledgeList(true);
         refreshMeta();
         showToast('知识已更新入库');

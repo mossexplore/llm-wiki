@@ -120,6 +120,7 @@
         if (!r.ok) throw new Error(data.detail || '入库失败');
         state.committed = data;
         state.knowledgeDirty = true;   // 标记列表需刷新:切到知识列表页会自动重载
+        state.graph = null; state.graphSelected = '';   // 新增知识,图谱缓存失效
         goToStep(4);
         state.committing = false;
         render();
