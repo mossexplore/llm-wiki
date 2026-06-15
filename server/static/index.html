@@ -61,7 +61,9 @@
     svg { flex: none; }
 
     .page { min-height: 100vh; padding: 36px 32px 64px; }
-    .wrap { max-width: 1180px; margin: 0 auto; }
+    .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; min-height: calc(100vh - 100px); }
+    /* 内容区给恒定最小高度,各标签页切换时底部(footer)不再跳动 */
+    #root { flex: 1; min-height: clamp(440px, calc(100vh - 252px), 100vh); }
     .top {
       display: flex;
       align-items: center;
