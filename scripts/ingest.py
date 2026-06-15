@@ -51,7 +51,10 @@ def load_config() -> dict:
     """
     if not CONFIG_PATH.exists():
         raise RuntimeError(f"缺少配置文件 {CONFIG_PATH};请复制 config.example.yaml 为 config.yaml 并填写。")
-    cfg = (yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}).get("openai", {})
+    data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    if data.get("env", "dev") == "dev":
+        os.environ["NO_PROXY"] = "127.0.0.1"
+    cfg = data.get("openai", {})
     if not cfg.get("api_key"):
         raise RuntimeError(f"配置文件 {CONFIG_PATH} 缺少 openai.api_key。")
     return cfg

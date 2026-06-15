@@ -1,5 +1,6 @@
 # OpenAI 接口配置 —— 复制本文件为 config.yaml 后填写真实值
 # config.yaml 已被 .gitignore 排除,不会提交到仓库(避免密钥泄露)
+env: "dev"                                 # 环境标识;dev 时 ingest.py 会设置 NO_PROXY=127.0.0.1
 openai:
   api_key: "sk-你的密钥"                  # 必填
   base_url: "https://api.openai.com/v1"  # 可选;走代理/Azure/本地兼容网关时改这里,留空则用官方默认
