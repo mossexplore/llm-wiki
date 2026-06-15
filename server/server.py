@@ -286,6 +286,8 @@ def knowledge_list():
             "confidence": fm.get("confidence") or "unknown",
             "signatures": fm.get("signatures") or [],
             "components": fm.get("components") or [],
+            "created": fm.get("created") or "",                # 入库日期
+            "timestamp": fm.get("timestamp") or "",            # 入库时间(完整 UTC)
             "updated": datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
         })
     return {"items": items}
@@ -294,6 +296,15 @@ def knowledge_list():
 @app.get("/api/knowledge/{case_file:path}")
 def knowledge_detail(case_file: str):
     return _case_detail(_case_path(case_file))
+
+
+@app.delete("/api/knowledge/{case_file:path}")
+def knowledge_delete(case_file: str):
+    """删除一条已入库知识(wiki/cases/*.md);raw/ 不可变层原文保留以备溯源。"""
+    path = _case_path(case_file)                # 复用校验:限定 cases 目录、.md、非 index
+    path.unlink()
+    ingest.update_indexes()
+    return {"ok": True, "case_file": str(path.relative_to(ROOT))}
 
 
 @app.put("/api/knowledge/{case_file:path}")
