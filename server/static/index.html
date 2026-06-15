@@ -4,229 +4,893 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>log-wiki · 日志排查知识库</title>
-  <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" />
-  <script src="https://unpkg.com/vue@2/dist/vue.js"></script>
-  <script src="https://unpkg.com/element-ui/lib/index.js"></script>
   <style>
-    body { margin: 0; background: #f5f7fa; font-family: -apple-system, "PingFang SC", sans-serif; }
-    #app { max-width: 960px; margin: 0 auto; padding: 24px; }
-    h1 { font-size: 20px; color: #303133; }
-    .sub { color: #909399; font-size: 13px; margin-top: -8px; }
-    .card { margin-top: 16px; }
-    .sig-row { display: flex; margin-bottom: 8px; }
-    .sig-row .el-input { margin-right: 8px; }
-    .hit { border-left: 3px solid #67c23a; padding: 8px 12px; margin-bottom: 12px; background: #f0f9eb; }
-    .hit pre, .stream pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
-    .stream pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; max-height: 280px; overflow: auto; }
-    .muted { color: #909399; font-size: 12px; }
+    :root {
+      --accent-h: 205;
+      --accent: oklch(0.58 0.15 var(--accent-h));
+      --accent-bright: oklch(0.50 0.16 var(--accent-h));
+      --accent-deep: oklch(0.45 0.15 var(--accent-h));
+      --accent-soft: oklch(0.74 0.13 var(--accent-h) / 0.13);
+      --accent-line: oklch(0.74 0.13 var(--accent-h) / 0.32);
+      --accent-glow: oklch(0.74 0.13 var(--accent-h) / 0.20);
+      --bg-app: #eef1f6;
+      --surface-1: #ffffff;
+      --surface-2: #ffffff;
+      --surface-3: #f4f7fb;
+      --surface-inset: #eef2f7;
+      --field: #ffffff;
+      --field-focus: #ffffff;
+      --line: rgba(15, 25, 45, 0.10);
+      --line-strong: rgba(15, 25, 45, 0.16);
+      --line-faint: rgba(15, 25, 45, 0.06);
+      --text: #141a25;
+      --text-dim: #3c4655;
+      --text-mute: #6b7689;
+      --text-faint: #97a1b2;
+      --on-accent: #ffffff;
+      --success: oklch(0.62 0.14 155);
+      --warning: oklch(0.66 0.13 80);
+      --danger: oklch(0.62 0.16 18);
+      --success-soft: oklch(0.78 0.14 155 / 0.14);
+      --warning-soft: oklch(0.82 0.13 80 / 0.16);
+      --danger-soft: oklch(0.70 0.16 18 / 0.14);
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+      --r-sm: 9px;
+      --r-md: 12px;
+      --r-lg: 16px;
+      --r-full: 999px;
+      --sh-sm: 0 1px 2px rgba(20, 30, 50, 0.08);
+      --sh-pop: 0 18px 48px -14px rgba(20, 30, 50, 0.26);
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg-app);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, textarea { font: inherit; color: inherit; }
+    button { border: 0; background: none; cursor: pointer; }
+    svg { flex: none; }
+
+    .page { min-height: 100vh; padding: 36px 32px 64px; }
+    .wrap { max-width: 1180px; margin: 0 auto; }
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin-bottom: 22px;
+    }
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(150deg, oklch(0.72 0.12 var(--accent-h)), var(--accent-deep));
+      color: var(--on-accent);
+      box-shadow: 0 10px 24px -8px var(--accent-glow);
+    }
+    h1 { margin: 2px 0 0; font-size: 22px; font-weight: 800; line-height: 1.25; }
+    h3 { margin: 3px 0 0; font-size: 15px; font-weight: 650; line-height: 1.35; }
+    .rule { height: 1px; background: var(--line); margin-bottom: 26px; }
+    .grid { display: grid; grid-template-columns: 244px 1fr; gap: 22px; align-items: start; }
+    .main { display: grid; gap: 16px; min-width: 0; }
+
+    .kicker {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: var(--text-mute);
+      white-space: nowrap;
+    }
+    .mono { font-family: var(--mono); }
+    .muted { color: var(--text-mute); }
+    .dim { color: var(--text-dim); }
+
+    .card {
+      background: var(--surface-1);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      box-shadow: var(--sh-sm);
+    }
+    .rail { padding: 20px 18px; position: sticky; top: 24px; }
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .card-pad { padding: 18px; }
+    .seg {
+      display: inline-flex;
+      gap: 3px;
+      padding: 3px;
+      background: var(--surface-inset);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+    }
+    .seg button {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-mute);
+      white-space: nowrap;
+    }
+    .seg button:hover { color: var(--text-dim); }
+    .seg button.on { background: var(--surface-2); color: var(--text); box-shadow: var(--sh-sm); }
+
+    .badge, .lc {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--r-full);
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    .badge.ok, .lc.published { color: var(--success); background: var(--success-soft); border-color: transparent; }
+    .badge.warn, .lc.review { color: var(--warning); background: var(--warning-soft); border-color: transparent; }
+    .badge.info { color: var(--accent-bright); background: var(--accent-soft); border-color: transparent; }
+    .badge.bad { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+    .dot { width: 6px; height: 6px; border-radius: var(--r-full); background: currentColor; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: var(--r-sm);
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      color: var(--text-dim);
+      transition: 0.15s var(--ease);
+      white-space: nowrap;
+    }
+    .btn:hover { color: var(--text); border-color: var(--line-strong); background: var(--surface-3); }
+    .btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; box-shadow: 0 8px 20px -8px var(--accent-glow); }
+    .btn.primary:hover { background: var(--accent-bright); color: var(--on-accent); }
+    .btn.ghost { background: transparent; }
+    .btn.sm { min-height: 30px; padding: 0 11px; font-size: 12px; }
+    .btn.icon { width: 36px; padding: 0; flex: none; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .field {
+      width: 100%;
+      height: 38px;
+      padding: 0 12px;
+      border-radius: var(--r-sm);
+      background: var(--field);
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-size: 13px;
+      transition: 0.15s;
+    }
+    textarea.field { height: auto; padding: 10px 12px; resize: vertical; line-height: 1.6; }
+    .field::placeholder { color: var(--text-faint); }
+    .field:focus { outline: none; border-color: var(--accent-line); background: var(--field-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .lbl { display: grid; gap: 6px; }
+    .lbl > span { font-size: 11.5px; font-weight: 600; color: var(--text-mute); }
+
+    .step { display: flex; gap: 13px; }
+    .step.click { cursor: pointer; }
+    .step-mark { display: flex; flex-direction: column; align-items: center; }
+    .step-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--r-full);
+      display: grid;
+      place-items: center;
+      background: var(--surface-3);
+      border: 1px solid var(--line);
+      color: var(--text-mute);
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .step.active .step-dot {
+      background: var(--accent-soft);
+      border: 2px solid var(--accent);
+      color: var(--accent-deep);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+    .step.done .step-dot { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+    .step-line { width: 2px; flex: 1; min-height: 20px; margin: 5px 0; background: var(--line); }
+    .step.done .step-line { background: var(--accent); }
+    .step-copy { padding-bottom: 18px; }
+    .step-label { font-size: 13.5px; font-weight: 650; color: var(--text-mute); }
+    .step.active .step-label { color: var(--accent-deep); font-weight: 700; }
+    .step.done .step-label { color: var(--text); }
+
+    .codebox {
+      margin: 0;
+      min-height: 120px;
+      max-height: 340px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: var(--surface-inset);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-md);
+      padding: 14px 16px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.62;
+      color: var(--text-dim);
+    }
+    .result-block {
+      border-left: 3px solid var(--success);
+      background: var(--success-soft);
+      border-radius: 0 var(--r-md) var(--r-md) 0;
+      padding: 13px 16px;
+    }
+    .result-block.warn { border-left-color: var(--warning); background: var(--warning-soft); }
+    .empty { display: grid; place-items: center; gap: 8px; padding: 36px 20px; text-align: center; color: var(--text-mute); }
+    .toast {
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      z-index: 80;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 16px;
+      border-radius: var(--r-md);
+      background: var(--surface-1);
+      border: 1px solid var(--line-strong);
+      box-shadow: var(--sh-pop);
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: 0.25s var(--ease);
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .spin { animation: spin 0.9s linear infinite; }
+    .pulse { animation: pulse 1.1s infinite; }
+    .caret { display: inline-block; width: 7px; height: 14px; margin-left: 2px; background: var(--accent); animation: blink 1s step-end infinite; vertical-align: -2px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 50% { opacity: 0.35; } }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .footer {
+      margin-top: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--text-faint);
+      font-size: 11.5px;
+      text-align: center;
+    }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .mobile-only { display: none; }
+
+    @media (max-width: 840px) {
+      .page { padding: 24px 16px 44px; }
+      .grid { grid-template-columns: 1fr; }
+      .rail { position: static; }
+      .two { grid-template-columns: 1fr; }
+      .card-head { align-items: flex-start; }
+      .desktop-only { display: none; }
+      .mobile-only { display: block; }
+    }
   </style>
 </head>
 <body>
-<div id="app">
-  <h1>log-wiki · 日志排查知识库</h1>
-  <p class="sub">写入知识(LLM 流式抽取 + 人工复核确认)与检索知识(粘报错查相似案例)</p>
-
-  <el-tabs v-model="tab">
-    <!-- ============ 写入知识 ============ -->
-    <el-tab-pane label="① 写入知识" name="ingest">
-      <el-card class="card" shadow="never">
-        <div slot="header">第一步:粘贴原始排查记录(工单/对话/笔记),模型流式抽取成结构化案例(此步不落库)</div>
-        <el-input type="textarea" :rows="8" v-model="rawInput"
-          placeholder="把原始排查记录粘贴到这里……&#10;例:大促高峰 order-service 一批接口疯狂 500,日志一直刷 HikariPool-1 - Connection is not available……"></el-input>
-        <el-button type="primary" icon="el-icon-cpu" style="margin-top:12px"
-          :loading="previewing" @click="doPreview">解析</el-button>
-
-        <div class="stream" v-if="streamText || previewing" style="margin-top:12px">
-          <div class="muted">
-            模型输出{{ previewing ? '(生成中…)' : '(已完成)' }}
-            <i v-if="previewing" class="el-icon-loading"></i>
+  <div id="app" class="page">
+    <div class="wrap">
+      <header class="top">
+        <div class="brand">
+          <div class="logo" aria-hidden="true"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path></svg></div>
+          <div>
+            <div class="kicker" style="color:var(--accent-deep)">LOG TRIAGE · KNOWLEDGE BASE</div>
+            <h1>log-wiki · 日志排查知识库</h1>
           </div>
-          <pre>{{ streamText }}</pre>
         </div>
-        <el-alert v-if="parseErr" class="card" type="error" :closable="false" show-icon
-          title="解析失败" :description="parseErr"></el-alert>
-      </el-card>
-
-      <el-card class="card" shadow="never" v-if="draft">
-        <div slot="header">
-          第二步:复核抽取结果 —— 可直接修改;确认无误后才真正入库
-          <el-tag size="mini" type="warning" style="margin-left:8px">signatures 请保持报错原文,勿改写</el-tag>
+        <div class="seg" aria-label="主模式">
+          <button id="tab-ingest" class="on" type="button">写入知识</button>
+          <button id="tab-query" type="button">检索知识</button>
         </div>
-        <el-form label-width="90px" size="small">
-          <el-form-item label="标题"><el-input v-model="draft.title"></el-input></el-form-item>
-          <el-form-item label="类别"><el-input v-model="draft.category" style="width:200px"></el-input></el-form-item>
+      </header>
+      <div class="rule"></div>
+      <main id="root"></main>
+      <div class="footer">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"></path><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+        AI 可能产生不准确的信息,关键操作请人工核实;signatures 保持报错原文。
+      </div>
+    </div>
+    <div id="toast" class="toast"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span></span></div>
+  </div>
 
-          <el-form-item label="signatures">
-            <div v-for="(s, i) in draft.signatures" :key="'s'+i" class="sig-row">
-              <el-input v-model="draft.signatures[i]" placeholder="报错原文 / 异常类全名 / 错误码"></el-input>
-              <el-button icon="el-icon-delete" @click="draft.signatures.splice(i,1)"></el-button>
-            </div>
-            <el-button size="mini" icon="el-icon-plus" @click="draft.signatures.push('')">添加 signature</el-button>
-          </el-form-item>
+  <script>
+    const SAMPLE_RAW_FALLBACK = '大促高峰 order-service 一批接口疯狂 500,日志一直刷 HikariPool-1 - Connection is not available, request timed out after 30007ms。DB CPU 不高,但活跃连接数顶满 maximumPoolSize 设为 20。排查发现慢查询 getOrderDetail 平均 4.2s 长时间占用连接,池一被占满后续请求等待 30s 超时即报错。最终给 getOrderDetail 涉及字段加复合索引,查询降到 60ms,并把 maximumPoolSize 调到 40、加上 leakDetectionThreshold 连接泄漏检测,大促期间未再复现。';
+    const SAMPLE_CASE_FALLBACK = {
+      title: 'HikariPool 连接池耗尽致接口批量 500',
+      category: '数据库 / 连接池',
+      signatures: ['HikariPool-1 - Connection is not available, request timed out'],
+      components: ['order-service', 'HikariCP', 'MySQL'],
+      background: '大促高峰期 order-service 接口批量返回 500,DB CPU 不高但活跃连接顶满 maximumPoolSize 设为 20。',
+      diagnosis: '慢查询 getOrderDetail 平均 4.2s 长时间占用连接,连接池耗尽后续请求等待 30s 超时,HikariCP 抛 Connection is not available。',
+      solution: '为 getOrderDetail 涉及字段加复合索引,查询从 4.2s 降至 60ms;maximumPoolSize 由 20 调至 40,并启用 HikariCP leakDetectionThreshold 连接泄漏检测,大促期间未再出现连接池耗尽。'
+    };
 
-          <el-form-item label="组件">
-            <div v-for="(c, i) in draft.components" :key="'c'+i" class="sig-row">
-              <el-input v-model="draft.components[i]" placeholder="服务 / 组件名" style="width:240px"></el-input>
-              <el-button icon="el-icon-delete" @click="draft.components.splice(i,1)"></el-button>
-            </div>
-            <el-button size="mini" icon="el-icon-plus" @click="draft.components.push('')">添加组件</el-button>
-          </el-form-item>
+    const state = {
+      mode: 'ingest',
+      step: 1,
+      rawInput: '',
+      streamText: '',
+      previewing: false,
+      parseErr: '',
+      draft: null,
+      committing: false,
+      committed: null,
+      logText: '',
+      querying: false,
+      result: null,
+      stats: null,
+      sample: { raw: SAMPLE_RAW_FALLBACK, case: SAMPLE_CASE_FALLBACK }
+    };
 
-          <el-form-item label="问题背景"><el-input type="textarea" :rows="3" v-model="draft.background"></el-input></el-form-item>
-          <el-form-item label="定位过程"><el-input type="textarea" :rows="4" v-model="draft.diagnosis"></el-input></el-form-item>
-          <el-form-item label="解决方案"><el-input type="textarea" :rows="4" v-model="draft.solution"></el-input></el-form-item>
-          <el-form-item label="工单号"><el-input v-model="draft.ident" placeholder="可选;留空用时间戳命名 raw 文件" style="width:240px"></el-input></el-form-item>
+    const root = document.getElementById('root');
+    const toastEl = document.getElementById('toast');
+    const tabIngest = document.getElementById('tab-ingest');
+    const tabQuery = document.getElementById('tab-query');
 
-          <el-form-item>
-            <el-button type="success" icon="el-icon-check" :loading="committing" @click="commit">确认入库</el-button>
-            <el-button @click="draft = null">取消</el-button>
-          </el-form-item>
-        </el-form>
-      </el-card>
+    function iconBook() { return '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path></svg>'; }
+    function iconCheck() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>'; }
+    function iconInfo() { return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"></path><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>'; }
+    function iconSearch() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"></path><path d="M21 21l-4.35-4.35"></path></svg>'; }
+    function iconPlus() { return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>'; }
+    function iconBack() { return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>'; }
+    function iconTrash() { return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path></svg>'; }
+    function iconFile() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>'; }
+    function iconSpark() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 8v6"></path><path d="M2 12h6m8 0h6"></path><path d="M5 5l4 4m6 6 4 4"></path><path d="M19 5l-4 4m-6 6-4 4"></path></svg>'; }
+    function iconSpin() { return '<svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"></path></svg>'; }
 
-      <el-alert v-if="committed" class="card" type="success" :closable="false" show-icon
-        :title="'已入库:' + committed.case_file"
-        :description="'原文存档:' + committed.raw_file"></el-alert>
-    </el-tab-pane>
+    function escapeHtml(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
 
-    <!-- ============ 检索知识 ============ -->
-    <el-tab-pane label="② 检索知识" name="query">
-      <el-card class="card" shadow="never">
-        <div slot="header">粘一段日志报错(带时间戳/毫秒数等噪声没关系),检索相似案例</div>
-        <el-input type="textarea" :rows="5" v-model="logText"
-          placeholder="例:2026-06-13 15:10:33 ERROR HikariPool-1 - Connection is not available, request timed out after 30007ms"></el-input>
-        <el-button type="primary" icon="el-icon-search" style="margin-top:12px"
-          :loading="querying" @click="runQuery">检索</el-button>
-      </el-card>
+    function showToast(msg) {
+      clearTimeout(showToast.timer);
+      toastEl.querySelector('span').textContent = msg;
+      toastEl.classList.add('show');
+      showToast.timer = setTimeout(() => toastEl.classList.remove('show'), 2800);
+    }
 
-      <el-card class="card" shadow="never" v-if="result">
-        <template v-if="result.mode === 'exact'">
-          <el-alert :title="'精确命中 ' + result.hits.length + ' 个案例'" type="success" :closable="false" show-icon></el-alert>
-          <div v-for="(h, i) in result.hits" :key="i" class="hit" style="margin-top:12px">
-            <b>{{ h.title }}</b>
-            <el-tag size="mini" :type="h.status === 'verified' ? 'success' : 'warning'" style="margin-left:8px">{{ h.status }}</el-tag>
-            <div class="muted">文件:{{ h.file }}　命中:{{ h.matched.join('；') }}</div>
-            <div class="muted" v-if="h.note">{{ h.note }}</div>
-            <div style="margin-top:6px"><b>解决方案</b></div>
-            <pre>{{ h.solution }}</pre>
-          </div>
-        </template>
-        <template v-else-if="result.mode === 'fuzzy'">
-          <el-alert title="未精确命中。以下为可能相关案例(需人工判断,勿直接照搬)" type="warning" :closable="false" show-icon></el-alert>
-          <div v-for="(h, i) in result.hits" :key="i" class="hit" style="border-left-color:#e6a23c;background:#fdf6ec;margin-top:12px">
-            <b>{{ h.title }}</b><span class="muted">　重合度 {{ h.score }}　{{ h.file }}</span>
-          </div>
-        </template>
-        <template v-else>
-          <el-alert title="知识库中暂无相关案例" type="info" :closable="false" show-icon
-            description="请勿编造解决方案;排查后可在「写入知识」页把本次结论入库。"></el-alert>
-        </template>
-      </el-card>
-    </el-tab-pane>
-  </el-tabs>
-</div>
+    function noBackend(status) {
+      return [404, 405, 501, 502, 503, 504].includes(status);
+    }
 
-<script>
-// 统一用浏览器内置 fetch,不依赖任何第三方请求库
-new Vue({
-  el: '#app',
-  data: {
-    tab: 'ingest',
-    previewing: false, committing: false, querying: false,
-    rawInput: '', streamText: '', parseErr: '',
-    draft: null, committed: null,
-    logText: '', result: null,
-  },
-  methods: {
-    // 粘贴文本 → 流式读取模型输出,边收边显示,结束后解析成表单
-    async doPreview() {
-      const raw = this.rawInput;
-      if (!raw.trim()) { this.$message.warning('请先粘贴原始排查记录'); return; }
-      this.draft = null; this.committed = null; this.parseErr = '';
-      this.streamText = ''; this.previewing = true;
+    function slug(s) {
+      return (s || 'case').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'case';
+    }
+
+    function toDraft(o, raw) {
+      return {
+        title: o.title || '',
+        category: o.category || '未分类',
+        signatures: o.signatures && o.signatures.length ? o.signatures.slice() : [''],
+        components: o.components && o.components.length ? o.components.slice() : [''],
+        background: o.background || '',
+        diagnosis: o.diagnosis || '',
+        solution: o.solution || '',
+        ident: '',
+        raw
+      };
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      tabIngest.classList.toggle('on', mode === 'ingest');
+      tabQuery.classList.toggle('on', mode === 'query');
+      render();
+    }
+
+    function setStep(step) {
+      if (step <= state.step) {
+        state.step = step;
+        render();
+      }
+    }
+
+    async function refreshMeta() {
+      try {
+        const [statsResp, sampleResp] = await Promise.all([
+          fetch('/api/kb/stats'),
+          fetch('/api/examples/ingest')
+        ]);
+        if (statsResp.ok) state.stats = await statsResp.json();
+        if (sampleResp.ok) state.sample = await sampleResp.json();
+      } catch (e) {}
+      render();
+    }
+
+    async function loadSample() {
+      if (!state.sample.raw) await refreshMeta();
+      state.rawInput = state.sample.raw || SAMPLE_RAW_FALLBACK;
+      render();
+      showToast('已载入示例记录');
+    }
+
+    async function doPreview() {
+      const raw = state.rawInput;
+      if (!raw.trim()) { showToast('请先粘贴原始排查记录'); return; }
+      Object.assign(state, { step: 2, previewing: true, streamText: '', parseErr: '', draft: null, committed: null });
+      render();
       try {
         const resp = await fetch('/api/ingest/preview', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ raw: raw }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw })
         });
         if (!resp.ok) {
-          let d = ''; try { d = (await resp.json()).detail; } catch (e) {}
-          throw new Error(d || ('HTTP ' + resp.status));
+          if (noBackend(resp.status)) return demoPreview(raw);
+          let detail = '';
+          try { detail = (await resp.json()).detail; } catch (e) {}
+          throw new Error(detail || 'HTTP ' + resp.status);
         }
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
+        let acc = '';
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          this.streamText += decoder.decode(value, { stream: true });
+          acc += decoder.decode(value, { stream: true });
+          state.streamText = acc;
+          render();
         }
-        if (this.streamText.includes('[ERROR]')) throw new Error(this.streamText);
-
-        const txt = this.streamText.replace(/^```json\s*|```\s*$/gm, '').trim();
-        const o = JSON.parse(txt);                     // json_object 模式,纯 JSON
-        this.draft = {
-          title: o.title || '', category: o.category || '未分类',
-          signatures: (o.signatures && o.signatures.length) ? o.signatures.slice() : [''],
-          components: (o.components && o.components.length) ? o.components.slice() : [''],
-          background: o.background || '', diagnosis: o.diagnosis || '', solution: o.solution || '',
-          ident: '', raw: raw,                          // 原文留在前端,入库时随 commit 提交
-        };
-        this.$message.success('解析完成,请复核后确认入库');
+        if (acc.includes('[ERROR]')) throw new Error(acc);
+        const txt = acc.replace(/^```json\s*|```\s*$/gm, '').trim();
+        state.draft = toDraft(JSON.parse(txt), raw);
+        state.step = 3;
+        state.previewing = false;
+        render();
+        showToast('解析完成,请复核后确认入库');
       } catch (e) {
-        this.parseErr = String(e.message || e);
-        this.$message.error('解析失败,详见下方');
-      } finally {
-        this.previewing = false;
+        state.parseErr = String(e && e.message || e);
+        state.previewing = false;
+        render();
+        showToast('解析失败,详见下方');
       }
-    },
+    }
 
-    async commit() {
-      const d = this.draft;
+    async function demoPreview(raw) {
+      const obj = state.sample.case || SAMPLE_CASE_FALLBACK;
+      const json = JSON.stringify(obj, null, 2);
+      for (let k = 1; k <= 6; k++) {
+        await new Promise(r => setTimeout(r, 90));
+        state.streamText = json.slice(0, Math.round(json.length * k / 6));
+        render();
+      }
+      state.streamText = json;
+      state.draft = toDraft(obj, raw);
+      state.step = 3;
+      state.previewing = false;
+      render();
+      showToast('后端未连接 · 已载入演示数据');
+    }
+
+    async function commit() {
+      const d = state.draft;
+      if (!d) return;
       const payload = {
-        raw: d.raw, title: d.title, category: d.category,
+        raw: d.raw,
+        title: d.title,
+        category: d.category,
         signatures: d.signatures.filter(s => s && s.trim()),
         components: d.components.filter(c => c && c.trim()),
-        background: d.background, diagnosis: d.diagnosis, solution: d.solution,
-        ident: d.ident || null,
+        background: d.background,
+        diagnosis: d.diagnosis,
+        solution: d.solution,
+        ident: d.ident || null
       };
-      if (!payload.title.trim()) { this.$message.error('标题不能为空'); return; }
-      if (!payload.signatures.length) { this.$message.error('至少保留一条 signature'); return; }
-      this.committing = true;
+      if (!payload.title.trim()) { showToast('标题不能为空'); return; }
+      if (!payload.signatures.length) { showToast('至少保留一条 signature'); return; }
+      state.committing = true;
+      render();
       try {
         const r = await fetch('/api/ingest/commit', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
         });
+        if (noBackend(r.status)) {
+          const stamp = payload.ident || String(Date.now());
+          state.committed = { case_file: 'wiki/cases/' + slug(payload.title) + '.md', raw_file: 'raw/sources/' + stamp + '.md', demo: true };
+          state.step = 4;
+          state.committing = false;
+          render();
+          showToast('后端未连接 · 已演示入库结果');
+          return;
+        }
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || '入库失败');
-        this.committed = data; this.draft = null; this.streamText = ''; this.rawInput = '';
-        this.$message.success('已真正写入本地知识库');
+        state.committed = data;
+        state.step = 4;
+        state.committing = false;
+        render();
+        refreshMeta();
+        showToast('已真正写入本地知识库');
       } catch (e) {
-        this.$message.error(String(e.message || e));
-      } finally {
-        this.committing = false;
+        state.committing = false;
+        render();
+        showToast(String(e && e.message || e));
       }
-    },
+    }
 
-    async runQuery() {
-      if (!this.logText.trim()) { this.$message.warning('请输入报错信息'); return; }
-      this.querying = true; this.result = null;
+    async function runQuery() {
+      if (!state.logText.trim()) { showToast('请输入报错信息'); return; }
+      state.querying = true;
+      state.result = null;
+      render();
       try {
         const r = await fetch('/api/query', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ log: this.logText }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ log: state.logText })
         });
+        if (noBackend(r.status)) return demoQuery();
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || '检索失败');
-        this.result = data;
+        state.result = data;
+        state.querying = false;
+        render();
       } catch (e) {
-        this.$message.error(String(e.message || e));
-      } finally {
-        this.querying = false;
+        state.querying = false;
+        render();
+        showToast(String(e && e.message || e));
       }
-    },
-  },
-});
-</script>
+    }
+
+    function demoQuery() {
+      const log = state.logText.toLowerCase();
+      if (log.includes('hikari') || log.includes('connection is not available')) {
+        state.result = { mode: 'exact', hits: [{ title: SAMPLE_CASE_FALLBACK.title, status: 'verified', file: 'wiki/cases/hikari-pool-exhausted.md', matched: ['HikariPool-1 - Connection is not available'], solution: SAMPLE_CASE_FALLBACK.solution }] };
+      } else if (log.includes('oom') || log.includes('outofmemory') || log.includes('timeout') || log.includes('timed out')) {
+        state.result = { mode: 'fuzzy', hits: [{ title: 'JVM Metaspace OOM', score: 0.42, file: 'wiki/cases/jvm-metaspace-oom.md' }, { title: 'Kafka 消费组 Rebalance 风暴', score: 0.31, file: 'wiki/cases/kafka-rebalance.md' }] };
+      } else {
+        state.result = { mode: 'none', hits: [] };
+      }
+      state.querying = false;
+      render();
+      showToast('后端未连接 · 已演示检索结果');
+    }
+
+    function resetIngest() {
+      Object.assign(state, { step: 1, rawInput: '', streamText: '', parseErr: '', draft: null, committed: null });
+      render();
+    }
+
+    function updateDraft(key, value) {
+      state.draft[key] = value;
+    }
+
+    function updateList(key, index, value) {
+      state.draft[key][index] = value;
+    }
+
+    function addList(key) {
+      state.draft[key].push('');
+      render();
+    }
+
+    function removeList(key, index) {
+      state.draft[key].splice(index, 1);
+      if (!state.draft[key].length) state.draft[key].push('');
+      render();
+    }
+
+    function stepRows() {
+      const defs = [
+        { n: 1, label: '粘贴原文', meta: state.rawInput ? state.rawInput.length + ' 字 · 已读取' : '等待粘贴' },
+        { n: 2, label: '模型抽取', meta: state.previewing ? '流式生成中…' : (state.parseErr ? '解析失败' : (state.streamText ? 'JSON · 已完成' : '等待解析')) },
+        { n: 3, label: '人工复核', meta: state.draft ? '可编辑核对' : '等待抽取' },
+        { n: 4, label: '确认入库', meta: state.committed ? '已写入' : '待入库' }
+      ];
+      return defs.map((d, idx) => {
+        const cls = ['step'];
+        if (d.n < state.step) cls.push('done', 'click');
+        if (d.n === state.step) cls.push('active', 'click');
+        return `
+          <div class="${cls.join(' ')}" data-step="${d.n}">
+            <div class="step-mark">
+              <div class="step-dot">${d.n < state.step ? iconCheck() : d.n}</div>
+              ${idx < defs.length - 1 ? '<div class="step-line"></div>' : ''}
+            </div>
+            <div class="step-copy">
+              <div class="step-label">${escapeHtml(d.label)}</div>
+              <div class="mono muted" style="font-size:10.5px;margin-top:2px">${escapeHtml(d.meta)}</div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function statsHtml() {
+      const s = state.stats;
+      if (!s) return '<div class="mono muted" style="font-size:11px;margin-top:12px">统计加载中...</div>';
+      return `
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-faint);display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><div class="kicker">CASES</div><strong>${s.cases}</strong></div>
+          <div><div class="kicker">SIGN</div><strong>${s.signatures}</strong></div>
+          <div><div class="kicker">VERIFIED</div><strong>${s.verified}</strong></div>
+          <div><div class="kicker">DRAFT</div><strong>${s.drafts}</strong></div>
+        </div>`;
+    }
+
+    function renderRail() {
+      if (state.mode === 'query') {
+        return `
+          <aside class="card rail">
+            <div class="kicker" style="margin-bottom:14px">MATCH MODES</div>
+            <div style="display:grid;gap:14px">
+              ${modeNote('var(--success)', '精确命中', 'signature 原文匹配,可直接照方案处理。')}
+              ${modeNote('var(--warning)', '可能相关', '按重合度排序,需人工判断,勿照搬。')}
+              ${modeNote('var(--text-faint)', '暂无案例', '勿编造方案;排查后到写入页入库。')}
+            </div>
+            ${statsHtml()}
+          </aside>`;
+      }
+      return `
+        <aside class="card rail">
+          <div class="kicker" style="margin-bottom:16px">INGEST PIPELINE</div>
+          <div>${stepRows()}</div>
+          <div style="margin-top:4px;padding-top:16px;border-top:1px solid var(--line-faint);display:flex;gap:7px;align-items:flex-start">
+            <span style="width:8px;height:8px;border-radius:999px;background:var(--warning);margin-top:5px;flex:none"></span>
+            <span style="font-size:11.5px;color:var(--text-mute);line-height:1.5">signatures 请保持报错原文,勿改写或脱敏。</span>
+          </div>
+          ${statsHtml()}
+        </aside>`;
+    }
+
+    function modeNote(color, title, text) {
+      return `<div style="display:flex;gap:10px"><span style="width:8px;height:8px;border-radius:999px;background:${color};flex:none;margin-top:5px"></span><div><div style="font-size:13px;font-weight:650;color:var(--text)">${title}</div><div class="muted" style="font-size:11.5px;line-height:1.5;margin-top:2px">${text}</div></div></div>`;
+    }
+
+    function renderIngestMain() {
+      if (state.step === 1) {
+        return `
+          <section class="card">
+            <div class="card-head"><div><div class="kicker">STEP 01 · PASTE</div><h3>粘贴原始排查记录</h3></div><span class="badge mono">不落库</span></div>
+            <div class="card-pad">
+              <p class="muted" style="font-size:12.5px;margin:0 0 11px;line-height:1.55">把工单 / 对话 / 笔记原文粘进来,模型会流式抽取成结构化案例。此步不写入,确认后才入库。</p>
+              <textarea id="rawInput" class="field mono" spellcheck="false" placeholder="例:大促高峰 order-service 一批接口疯狂 500,日志一直刷 HikariPool-1 - Connection is not available, request timed out after 30007ms……" style="height:208px;font-size:12.5px;line-height:1.62">${escapeHtml(state.rawInput)}</textarea>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:13px;flex-wrap:wrap">
+                <button class="btn sm ghost" id="loadSample" type="button">${iconFile()}载入示例</button>
+                <div style="display:flex;align-items:center;gap:13px">
+                  <span class="mono muted" style="font-size:11px">${state.rawInput ? state.rawInput.length + ' 字' : ''}</span>
+                  <button class="btn primary" id="doPreview" type="button">${iconSpark()}解析抽取</button>
+                </div>
+              </div>
+            </div>
+          </section>`;
+      }
+      if (state.step === 2) {
+        return `
+          <section class="card">
+            <div class="card-head">
+              <div><div class="kicker">STEP 02 · MODEL EXTRACTION</div><h3>模型流式抽取</h3></div>
+              ${state.previewing ? '<span class="badge info"><span class="dot pulse"></span>生成中</span>' : '<span class="badge ok"><span class="dot"></span>已完成</span>'}
+            </div>
+            <div class="card-pad">
+              <pre class="codebox">${escapeHtml(state.streamText)}${state.previewing ? '<span class="caret"></span>' : ''}</pre>
+              ${state.parseErr ? `
+                <div class="result-block warn" style="border-left-color:var(--danger);background:var(--danger-soft);margin-top:13px">
+                  <div style="font-size:13px;font-weight:650;color:var(--danger)">解析失败</div>
+                  <div class="mono" style="font-size:11.5px;color:var(--text-dim);margin-top:6px;white-space:pre-wrap;word-break:break-word">${escapeHtml(state.parseErr)}</div>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:13px;flex-wrap:wrap">
+                  <button class="btn" id="backToPaste" type="button">${iconBack()}返回修改原文</button>
+                  <button class="btn primary" id="retryPreview" type="button">重试</button>
+                </div>` : ''}
+            </div>
+          </section>`;
+      }
+      if (state.step === 3) return renderReview();
+      return renderDone();
+    }
+
+    function renderReview() {
+      const d = state.draft || {};
+      return `
+        <section class="card">
+          <div class="card-head"><div><div class="kicker">STEP 03 · HUMAN REVIEW</div><h3>复核抽取结果,确认无误后入库</h3></div><span class="badge warn">待确认</span></div>
+          <div class="card-pad" style="display:grid;gap:14px">
+            <label class="lbl"><span>标题</span><input id="title" class="field" value="${escapeHtml(d.title || '')}"></label>
+            <div class="two">
+              <label class="lbl"><span>类别</span><input id="category" class="field" value="${escapeHtml(d.category || '')}"></label>
+              <label class="lbl"><span>工单号</span><input id="ident" class="field mono" value="${escapeHtml(d.ident || '')}" placeholder="可选,留空用时间戳"></label>
+            </div>
+            <div class="lbl">
+              <span>signatures <span class="mono" style="color:var(--text-faint);font-weight:400;text-transform:none;letter-spacing:0">报错原文 · 勿改写</span></span>
+              <div style="display:grid;gap:8px">
+                ${(d.signatures || ['']).map((v, i) => `
+                  <div style="display:flex;gap:8px">
+                    <input class="field mono sig" data-index="${i}" style="font-size:12px" value="${escapeHtml(v)}" placeholder="报错原文 / 异常类全名 / 错误码">
+                    <button class="btn icon del-sig" data-index="${i}" type="button" title="删除">${iconTrash()}</button>
+                  </div>`).join('')}
+              </div>
+              <button class="btn sm" id="addSig" type="button" style="justify-self:start;margin-top:2px">${iconPlus()}添加 signature</button>
+            </div>
+            <div class="lbl">
+              <span>组件</span>
+              <div class="two" style="gap:8px">
+                ${(d.components || ['']).map((v, i) => `
+                  <div style="display:flex;gap:6px">
+                    <input class="field mono comp" data-index="${i}" style="font-size:12px" value="${escapeHtml(v)}" placeholder="服务 / 组件名">
+                    <button class="btn icon del-comp" data-index="${i}" type="button" title="删除">${iconTrash()}</button>
+                  </div>`).join('')}
+              </div>
+              <button class="btn sm" id="addComp" type="button" style="justify-self:start;margin-top:2px">${iconPlus()}添加组件</button>
+            </div>
+            <div class="two">
+              <label class="lbl"><span>问题背景</span><textarea id="background" class="field" style="height:96px">${escapeHtml(d.background || '')}</textarea></label>
+              <label class="lbl"><span>定位过程</span><textarea id="diagnosis" class="field" style="height:96px">${escapeHtml(d.diagnosis || '')}</textarea></label>
+            </div>
+            <label class="lbl"><span>解决方案</span><textarea id="solution" class="field" style="height:88px">${escapeHtml(d.solution || '')}</textarea></label>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:14px;border-top:1px solid var(--line-faint);flex-wrap:wrap">
+              <button class="btn" id="backToPaste" type="button">${iconBack()}上一步:原文</button>
+              <button class="btn primary" id="commit" type="button" ${state.committing ? 'disabled' : ''}>${state.committing ? iconSpin() : iconCheck()}确认入库</button>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    function renderDone() {
+      const c = state.committed || {};
+      return `
+        <section class="card">
+          <div class="card-pad" style="display:grid;gap:18px;justify-items:center;text-align:center;padding:38px 24px">
+            <div style="width:56px;height:56px;border-radius:999px;display:grid;place-items:center;background:var(--success-soft);color:var(--success)">${iconCheck()}</div>
+            <div>
+              <div style="font-size:18px;font-weight:700">已写入本地知识库</div>
+              <div class="muted" style="font-size:12.5px;margin-top:5px">结构化案例与原文存档均已落库,可立即被检索命中。</div>
+            </div>
+            <div style="display:grid;gap:8px;width:100%;max-width:440px;text-align:left">
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--r-md);background:var(--surface-inset);border:1px solid var(--line-faint)"><span class="kicker">CASE</span><code class="mono" style="font-size:12px;color:var(--accent-deep);word-break:break-all">${escapeHtml(c.case_file || '')}</code></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--r-md);background:var(--surface-inset);border:1px solid var(--line-faint)"><span class="kicker">RAW</span><code class="mono" style="font-size:12px;color:var(--text-mute);word-break:break-all">${escapeHtml(c.raw_file || '')}</code></div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+              <button class="btn primary" id="resetIngest" type="button">${iconPlus()}再写入一条</button>
+              <button class="btn" id="goQuery" type="button">${iconSearch()}去检索</button>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    function renderQueryMain() {
+      const r = state.result;
+      return `
+        <section class="card">
+          <div class="card-head"><div><div class="kicker">QUERY · PASTE LOG</div><h3>粘一段日志报错检索相似案例</h3></div><span class="badge mono">噪声无所谓</span></div>
+          <div class="card-pad">
+            <textarea id="logText" class="field mono" spellcheck="false" placeholder="例:2026-06-13 15:10:33 ERROR HikariPool-1 - Connection is not available, request timed out after 30007ms" style="height:122px;font-size:12.5px;line-height:1.6">${escapeHtml(state.logText)}</textarea>
+            <button class="btn primary" id="runQuery" type="button" style="margin-top:13px" ${state.querying ? 'disabled' : ''}>${state.querying ? iconSpin() : iconSearch()}检索</button>
+          </div>
+        </section>
+        ${r ? renderResults(r) : ''}`;
+    }
+
+    function renderResults(r) {
+      if (r.mode === 'exact') {
+        return `
+          <section class="card">
+            <div class="card-head"><div><div class="kicker">RESULT · EXACT MATCH</div><h3>精确命中 ${r.hits.length} 个案例</h3></div><span class="badge ok">${iconCheck()}EXACT</span></div>
+            <div class="card-pad" style="display:grid;gap:12px">
+              ${r.hits.map(h => `
+                <div class="result-block">
+                  <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start">
+                    <strong style="font-size:14.5px;line-height:1.45">${escapeHtml(h.title)}</strong>
+                    <span class="lc ${h.status === 'verified' ? 'published' : 'review'}"><span class="dot"></span>${escapeHtml(h.status)}</span>
+                  </div>
+                  <div class="mono muted" style="font-size:11.5px;margin-top:8px;line-height:1.55">${escapeHtml(h.file)} · 命中:${escapeHtml((h.matched || []).join('；'))}</div>
+                  ${h.note ? `<div class="muted" style="font-size:11.5px;margin-top:5px">${escapeHtml(h.note)}</div>` : ''}
+                  <div class="kicker" style="margin-top:13px;margin-bottom:6px">SOLUTION</div>
+                  <div style="font-size:13px;color:var(--text-dim);line-height:1.72;white-space:pre-wrap">${escapeHtml(h.solution)}</div>
+                </div>`).join('')}
+            </div>
+          </section>`;
+      }
+      if (r.mode === 'fuzzy') {
+        return `
+          <section class="card">
+            <div class="card-head"><div><div class="kicker">RESULT · POSSIBLY RELATED</div><h3>未精确命中 · 以下可能相关</h3></div><span class="badge warn">需人工判断</span></div>
+            <div class="card-pad" style="display:grid;gap:10px">
+              <p class="muted" style="margin:0 0 2px;font-size:12px">按重合度排序,仅供参考,勿直接照搬其方案。</p>
+              ${r.hits.map(h => `
+                <div class="result-block warn" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                  <div style="min-width:0"><strong style="font-size:13.5px;display:block;line-height:1.4">${escapeHtml(h.title)}</strong><div class="mono muted" style="font-size:11px;margin-top:5px;word-break:break-all">${escapeHtml(h.file)}</div></div>
+                  <span class="badge warn mono">重合 ${escapeHtml(typeof h.score === 'number' ? h.score.toFixed(2) : h.score)}</span>
+                </div>`).join('')}
+            </div>
+          </section>`;
+      }
+      return `
+        <section class="card">
+          <div class="card-pad">
+            <div class="empty">
+              ${iconInfo()}
+              <div style="font-size:14px;font-weight:650;color:var(--text-dim)">知识库中暂无相关案例</div>
+              <div style="font-size:12px;max-width:380px;line-height:1.55">请勿编造解决方案;排查后可在「写入知识」页把本次结论入库,下次即可命中。</div>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    function bindEvents() {
+      tabIngest.onclick = () => setMode('ingest');
+      tabQuery.onclick = () => setMode('query');
+      root.querySelectorAll('.step.click').forEach(el => el.onclick = () => setStep(Number(el.dataset.step)));
+
+      const rawInput = document.getElementById('rawInput');
+      if (rawInput) rawInput.oninput = e => { state.rawInput = e.target.value; };
+      const logText = document.getElementById('logText');
+      if (logText) logText.oninput = e => { state.logText = e.target.value; };
+
+      const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+      bind('loadSample', loadSample);
+      bind('doPreview', doPreview);
+      bind('retryPreview', doPreview);
+      bind('backToPaste', () => { state.step = 1; state.parseErr = ''; render(); });
+      bind('addSig', () => addList('signatures'));
+      bind('addComp', () => addList('components'));
+      bind('commit', commit);
+      bind('resetIngest', resetIngest);
+      bind('goQuery', () => setMode('query'));
+      bind('runQuery', runQuery);
+
+      if (state.draft) {
+        ['title', 'category', 'ident', 'background', 'diagnosis', 'solution'].forEach(key => {
+          const el = document.getElementById(key);
+          if (el) el.oninput = e => updateDraft(key, e.target.value);
+        });
+        root.querySelectorAll('.sig').forEach(el => el.oninput = e => updateList('signatures', Number(e.target.dataset.index), e.target.value));
+        root.querySelectorAll('.comp').forEach(el => el.oninput = e => updateList('components', Number(e.target.dataset.index), e.target.value));
+        root.querySelectorAll('.del-sig').forEach(el => el.onclick = e => removeList('signatures', Number(e.currentTarget.dataset.index)));
+        root.querySelectorAll('.del-comp').forEach(el => el.onclick = e => removeList('components', Number(e.currentTarget.dataset.index)));
+      }
+    }
+
+    function render() {
+      root.innerHTML = `
+        <div class="grid">
+          ${renderRail()}
+          <div class="main">${state.mode === 'ingest' ? renderIngestMain() : renderQueryMain()}</div>
+        </div>`;
+      bindEvents();
+    }
+
+    render();
+    refreshMeta();
+  </script>
 </body>
 </html>

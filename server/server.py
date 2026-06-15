@@ -26,10 +26,29 @@ import query                                 # noqa: E402
 from fastapi import FastAPI, HTTPException                    # noqa: E402
 from fastapi.staticfiles import StaticFiles                   # noqa: E402
 from fastapi.responses import FileResponse, StreamingResponse  # noqa: E402
-from pydantic import BaseModel                                # noqa: E402
+from pydantic import BaseModel, Field                         # noqa: E402
 
 app = FastAPI(title="log-wiki")
 STATIC = pathlib.Path(__file__).resolve().parent / "static"
+
+SAMPLE_RAW = (
+    "大促高峰 order-service 一批接口疯狂 500,日志一直刷 "
+    "HikariPool-1 - Connection is not available, request timed out after 30007ms。"
+    "DB CPU 不高,但活跃连接数顶满 maximumPoolSize 设为 20。"
+    "排查发现慢查询 getOrderDetail 平均 4.2s 长时间占用连接,池一被占满后续请求等待 30s 超时即报错。"
+    "最终给 getOrderDetail 涉及字段加复合索引,查询降到 60ms,并把 maximumPoolSize 调到 40、"
+    "加上 leakDetectionThreshold 连接泄漏检测,大促期间未再复现。"
+)
+
+SAMPLE_CASE = {
+    "title": "HikariPool 连接池耗尽致接口批量 500",
+    "category": "数据库 / 连接池",
+    "signatures": ["HikariPool-1 - Connection is not available, request timed out"],
+    "components": ["order-service", "HikariCP", "MySQL"],
+    "background": "大促高峰期 order-service 接口批量返回 500,DB CPU 不高但活跃连接顶满 maximumPoolSize 设为 20。",
+    "diagnosis": "慢查询 getOrderDetail 平均 4.2s 长时间占用连接,连接池耗尽后续请求等待 30s 超时,HikariCP 抛 Connection is not available。",
+    "solution": "为 getOrderDetail 涉及字段加复合索引,查询从 4.2s 降至 60ms;maximumPoolSize 由 20 调至 40,并启用 HikariCP leakDetectionThreshold 连接泄漏检测,大促期间未再出现连接池耗尽。",
+}
 
 
 # ---------------- 1) 入库:流式预览(不落库) ----------------
@@ -63,8 +82,8 @@ class CommitReq(BaseModel):
     raw: str
     title: str
     category: str = "未分类"
-    signatures: List[str] = []
-    components: List[str] = []
+    signatures: List[str] = Field(default_factory=list)
+    components: List[str] = Field(default_factory=list)
     background: str = ""
     diagnosis: str = ""
     solution: str = ""
@@ -107,6 +126,28 @@ def query_kb(req: QueryReq):
     if not req.log.strip():
         raise HTTPException(400, "请输入报错信息")
     return query.search(req.log)
+
+
+# ---------------- 4) 首页辅助数据 ----------------
+@app.get("/api/examples/ingest")
+def ingest_example():
+    return {"raw": SAMPLE_RAW, "case": SAMPLE_CASE}
+
+
+@app.get("/api/kb/stats")
+def kb_stats():
+    cases = query.load_cases()
+    verified = sum(1 for c in cases if c["status"] == "verified")
+    drafts = sum(1 for c in cases if c["status"] == "draft")
+    signatures = sum(len(c["signatures"]) for c in cases)
+    latest = max((c["path"].stat().st_mtime for c in cases), default=None)
+    return {
+        "cases": len(cases),
+        "verified": verified,
+        "drafts": drafts,
+        "signatures": signatures,
+        "updated": datetime.datetime.fromtimestamp(latest).isoformat(timespec="seconds") if latest else None,
+    }
 
 
 # ---------------- 静态前端 ----------------
