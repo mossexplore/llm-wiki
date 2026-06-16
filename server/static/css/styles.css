@@ -58,12 +58,19 @@
     /* 内容区给恒定最小高度,各标签页切换时底部(footer)不再跳动 */
     #root { flex: 1; min-height: clamp(440px, calc(100vh - 252px), 100vh); }
     .top {
+      position: sticky;
+      top: 0;
+      z-index: 40;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 24px;
       flex-wrap: wrap;
-      margin-bottom: 22px;
+      margin: -10px -14px 0;
+      padding: 10px 14px 14px;
+      background: color-mix(in oklab, var(--bg-app) 88%, white);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(12px);
     }
     .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
     .logo {
@@ -78,7 +85,7 @@
     }
     h1 { margin: 2px 0 0; font-size: 22px; font-weight: 800; line-height: 1.25; }
     h3 { margin: 3px 0 0; font-size: 15px; font-weight: 650; line-height: 1.35; }
-    .rule { height: 1px; background: var(--line); margin-bottom: 26px; }
+    .rule { height: 20px; }
     .grid { display: grid; grid-template-columns: 244px 1fr; gap: 22px; align-items: start; }
     .main { display: grid; gap: 16px; min-width: 0; }
 
@@ -385,6 +392,7 @@
 
     @media (max-width: 840px) {
       .page { padding: 24px 16px 44px; }
+      .top { margin: -8px -8px 0; padding: 8px 8px 12px; gap: 14px; }
       .grid { grid-template-columns: 1fr; }
       .rail { position: static; }
       .graph-shell { grid-template-columns: 1fr; }
