@@ -20,12 +20,13 @@ search_index.py — 检索索引后端（阶段 1：SQLite + FTS5 trigram）
     python scripts/search_index.py stats
 """
 from __future__ import annotations   # 延迟注解求值,兼容 Python 3.9（X | None 等）
-import os, re, sys, json, sqlite3, pathlib, datetime, yaml
+import os, re, sys, json, sqlite3, pathlib, datetime, logging, yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CASES_DIR = ROOT / "wiki" / "cases"
 DB_PATH = pathlib.Path(os.environ.get("SEARCH_DB", ROOT / "index" / "search.db"))
 SCHEMA_PATH = ROOT / "db" / "schema.sqlite.sql"
+logger = logging.getLogger("log_wiki.search_index")
 
 
 # ----------------------------- 抽象接口 -----------------------------
@@ -310,14 +311,15 @@ backend: SearchBackend = SqliteSearch()
 
 
 def _cli() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     cmd = sys.argv[1] if len(sys.argv) > 1 else "stats"
     if cmd == "reindex":
         n = backend.reindex_all()
-        print(f"已从 wiki/cases/ 重建索引: {n} 条案例 -> {DB_PATH}")
+        logger.info("已从 wiki/cases/ 重建索引: %s 条案例 -> %s", n, DB_PATH)
     elif cmd == "search":
         if len(sys.argv) < 3:
             sys.exit('用法: python scripts/search_index.py search "报错文本"')
-        print(json.dumps(backend.search(sys.argv[2]), ensure_ascii=False, indent=2))
+        logger.info(json.dumps(backend.search(sys.argv[2]), ensure_ascii=False, indent=2))
     elif cmd == "stats":
         if not backend.available():
             sys.exit("当前 sqlite3 不支持 FTS5;检索会回退到文件扫描。")
@@ -328,7 +330,7 @@ def _cli() -> None:
             s = conn.execute("SELECT count(*) FROM case_signatures").fetchone()[0]
         finally:
             conn.close()
-        print(f"DB={DB_PATH}\ncases={n} signatures={s} fts5_trigram=ok")
+        logger.info("DB=%s\ncases=%s signatures=%s fts5_trigram=ok", DB_PATH, n, s)
     else:
         sys.exit("用法: python scripts/search_index.py [reindex|search <text>|stats]")
 

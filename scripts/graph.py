@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """graph.py — 从 OKF-ish wiki bundle 生成知识图谱 JSON。"""
 import itertools
+import json
+import logging
 import pathlib
 import re
-import sys
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WIKI_DIR = ROOT / "wiki"
 RAW_DIR = ROOT / "raw" / "sources"
 RESERVED = {"index.md", "log.md"}
+logger = logging.getLogger("log_wiki.graph")
 
 
 def rel(path: pathlib.Path) -> str:
@@ -153,10 +155,9 @@ def build_graph() -> dict:
 
 
 def main():
-    import json
-    json.dump(build_graph(), sys.stdout, ensure_ascii=False, indent=2)
-    print()
+    logger.info(json.dumps(build_graph(), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

@@ -273,6 +273,7 @@ def update_indexes() -> None:
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     ap = argparse.ArgumentParser()
     ap.add_argument("source", help="原始记录文件路径,或 - 表示从 stdin 读")
     ap.add_argument("--id", default=None,
@@ -297,8 +298,8 @@ def main():
     out.write_text(to_markdown(case, raw_rel), encoding="utf-8")
     update_indexes()
 
-    print(f"原始记录已存档: {raw_rel}")
-    print(f"案例草稿已生成: {out.relative_to(ROOT)} (status=draft,复核后升 verified)")
+    logger.info("原始记录已存档: %s", raw_rel)
+    logger.info("案例草稿已生成: %s (status=draft,复核后升 verified)", out.relative_to(ROOT))
 
 
 if __name__ == "__main__":

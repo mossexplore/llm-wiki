@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """lint_okf.py — 检查 log-wiki 的 OKF-ish 结构与排查护栏。"""
 import collections
+import logging
 import pathlib
 import re
 import sys
@@ -11,6 +12,7 @@ WIKI_DIR = ROOT / "wiki"
 CASES_DIR = WIKI_DIR / "cases"
 RAW_DIR = ROOT / "raw" / "sources"
 RESERVED = {"index.md", "log.md"}
+logger = logging.getLogger("log_wiki.lint_okf")
 
 
 def rel(path: pathlib.Path) -> str:
@@ -105,17 +107,18 @@ def main() -> int:
             warnings.append(f"{rel(index)}: missing progressive-disclosure index")
 
     if errors:
-        print("ERRORS")
+        logger.error("ERRORS")
         for item in errors:
-            print(f"- {item}")
+            logger.error("- %s", item)
     if warnings:
-        print("WARNINGS")
+        logger.warning("WARNINGS")
         for item in warnings:
-            print(f"- {item}")
+            logger.warning("- %s", item)
     if not errors and not warnings:
-        print("OK: wiki passes OKF-ish lint checks")
+        logger.info("OK: wiki passes OKF-ish lint checks")
     return 1 if errors else 0
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     sys.exit(main())
