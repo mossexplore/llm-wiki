@@ -40,11 +40,21 @@
       };
     }
 
-    // 与后端 _split_records 一致:按独占一行的 --- 切分,去空白
+    // 与后端 _split_records 一致:按 Markdown 一级标题切分,没有一级标题时视为单条
     function splitBatchRecords(raw) {
-      // 先归一化换行(CRLF/CR → LF),否则 Windows 文件的 ---\r 匹配不到,整文件会变成一条
-      return raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-        .split(/^[ \t]*-{3,}[ \t]*$/m).map(s => s.trim()).filter(Boolean);
+      const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const matches = [...text.matchAll(/^#[ \t]+.+$/gm)];
+      if (!matches.length) return text.trim() ? [text.trim()] : [];
+      return matches.map((m, i) => {
+        const start = m.index;
+        const end = i + 1 < matches.length ? matches[i + 1].index : text.length;
+        return text.slice(start, end).trim();
+      }).filter(Boolean);
+    }
+
+    function batchHeading(raw, i) {
+      const m = /^#[ \t]+(.+)$/m.exec(raw || '');
+      return m ? m[1].trim() : `记录 ${i + 1}`;
     }
 
     async function onBatchFile(file) {
@@ -55,11 +65,11 @@
       const fileInput = document.getElementById('batchFile');
       if (fileInput) fileInput.value = '';   // 允许再次选同一文件
       const split = splitBatchRecords(text);
-      if (!split.length) { showToast('未解析到任何记录;请用独占一行的 --- 分隔'); return; }
+      if (!split.length) { showToast('未解析到任何记录;请用 Markdown 一级标题 # 分隔多条'); return; }
       // 先进入"确认切分"阶段,让用户核对分割结果,无误后再并行抽取
       Object.assign(state, { batchActive: true, batchStage: 'split', batchRaw: text, batchSplit: split, batchRecords: [], batchSummary: null });
       render();
-      showToast(`已按 --- 切分为 ${split.length} 条,请确认后抽取`);
+      showToast(`已按一级标题切分为 ${split.length} 条,请确认后抽取`);
     }
 
     async function runBatchPreview(raw) {
@@ -273,7 +283,7 @@
             <span class="badge mono">未抽取</span>
           </div>
           <div class="card-pad">
-            <p class="muted" style="font-size:12.5px;margin:0 0 13px;line-height:1.55">已按独占一行的 <code class="mono">---</code> 把文件切成下列各条原文。确认切分无误后再并行抽取;若不对,返回检查文件中的分隔符。</p>
+            <p class="muted" style="font-size:12.5px;margin:0 0 13px;line-height:1.55">已按 Markdown 一级标题 <code class="mono"># 标题</code> 把文件切成下列各条原文。每个一级标题到下一个一级标题之前会作为一条记录;确认无误后再并行抽取。</p>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
               <button class="btn sm" id="batchExit" type="button">${iconBack()}返回粘贴</button>
               <button class="btn primary" id="batchStartExtract" type="button">${iconSpark()}开始并行抽取(${recs.length} 条)</button>
@@ -283,7 +293,7 @@
                 <div class="batch-card open">
                   <div class="batch-head" style="cursor:default">
                     <div class="batch-idx">${i + 1}</div>
-                    <div class="batch-main"><div class="batch-title">记录 ${i + 1}</div><div class="batch-sub mono">${raw.length} 字</div></div>
+                    <div class="batch-main"><div class="batch-title">${escapeHtml(batchHeading(raw, i))}</div><div class="batch-sub mono">${raw.length} 字</div></div>
                   </div>
                   <div class="batch-body"><pre class="codebox" style="max-height:200px;overflow:auto;margin:0">${escapeHtml(raw)}</pre></div>
                 </div>`).join('')}

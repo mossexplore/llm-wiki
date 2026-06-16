@@ -268,15 +268,24 @@ def ingest_commit(req: CommitReq):
     }
 
 
-# ---------------- 批量入库:上传含多条记录(--- 分隔)的 Markdown ----------------
+# ---------------- 批量入库:上传含多条记录(# 一级标题分隔)的 Markdown ----------------
 def _split_records(raw: str) -> List[str]:
-    """按"独占一行的 --- (3+ 连字符)"切分多条原始记录,去空白。
+    """按 Markdown 一级标题切分多条原始记录,去空白。
 
-    先把 CRLF/CR 归一化为 LF,否则 Windows 文件里 `---\\r` 匹配不到分隔符,
-    整个文件会被当成一条。
+    每个 `# 标题` 到下一个 `# 标题` 之前是一条记录。没有一级标题时视为单条。
+    不再使用 `---` 分隔,避免和 YAML frontmatter / 水平线 / 日志分隔符冲突。
     """
     raw = raw.replace("\r\n", "\n").replace("\r", "\n")
-    parts = re.split(r"(?m)^[ \t]*-{3,}[ \t]*$", raw)
+    matches = list(re.finditer(r"(?m)^#[ \t]+.+$", raw))
+    if not matches:
+        return [raw.strip()] if raw.strip() else []
+    parts = []
+    for i, match in enumerate(matches):
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(raw)
+        part = raw[start:end].strip()
+        if part:
+            parts.append(part)
     return [p.strip() for p in parts if p.strip()]
 
 
@@ -298,7 +307,7 @@ def _commit_one(req: CommitReq, used_slugs: set) -> dict:
 
 
 class PreviewBatchReq(BaseModel):
-    raw: str   # 整个 Markdown 文件内容(多条记录,--- 分隔)
+    raw: str   # 整个 Markdown 文件内容(多条记录,# 一级标题分隔)
 
 
 def _normalize_json_text(text: str) -> str:
@@ -332,7 +341,7 @@ def ingest_preview_batch(req: PreviewBatchReq):
     """切分多条原始记录,并行调用 LLM 抽取;以 NDJSON 流式返回每条的模型输出与结果。"""
     records = _split_records(req.raw)
     if not records:
-        raise HTTPException(400, "未解析到任何记录;请用独占一行的 --- 分隔多条")
+        raise HTTPException(400, "未解析到任何记录;请用 Markdown 一级标题 # 分隔多条")
     request_id = uuid.uuid4().hex[:12]
 
     def work(i: int, rec: str, out: queue.Queue):
