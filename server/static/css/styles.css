@@ -438,6 +438,18 @@
       min-height: 0;
       height: 100%;
     }
+    .knowledge-head {
+      align-items: flex-end;
+      padding-bottom: 42px;
+    }
+    .knowledge-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex: none;
+      flex-wrap: nowrap;
+      transform: translateY(23px);
+    }
     .knowledge-list { display: grid; gap: 8px; overflow: auto; padding-right: 2px; }
     .knowledge-item {
       position: relative;
