@@ -21,7 +21,9 @@
       committing: false,
       committed: null,
       batchActive: false,
-      batchLoading: false,
+      batchStage: 'split',          // split(确认切分) | extracting(并行抽取中) | review(复核入库)
+      batchRaw: '',
+      batchSplit: [],               // 切分后的原文数组,供用户确认
       batchRecords: [],
       batchCommitting: false,
       batchSummary: null,
@@ -342,21 +344,24 @@
       }
       if (state.batchActive) {
         const recs = state.batchRecords;
+        const total = state.batchStage === 'review' ? recs.length : state.batchSplit.length;
         const done = recs.filter(r => r.status === 'committed').length;
         const failed = recs.filter(r => r.status === 'failed').length;
+        const stageLabel = { split: '① 确认切分', extracting: '② 并行抽取中', review: '③ 复核入库' }[state.batchStage] || '';
         return `
           <aside class="card rail">
             <div class="kicker" style="margin-bottom:14px">BATCH INGEST</div>
+            <div class="badge mono" style="margin-bottom:14px">${stageLabel}</div>
             <div style="display:grid;gap:12px">
-              ${modeNote('var(--accent)', '并行抽取', '多条记录用 --- 分隔,模型并行抽取,效率更高。')}
-              ${modeNote('var(--success)', '逐条/批量', '可对每条单独确认入库,也可一次性全部入库。')}
+              ${modeNote('var(--accent)', '确认切分', '先按 --- 切分并展示各条原文,确认无误后再抽取。')}
+              ${modeNote('var(--success)', '逐条/批量', '抽取后可对每条单独入库,也可一次性全部入库。')}
               ${modeNote('var(--warning)', '需补全', '抽取失败的记录会标红展开,补全标题与 signatures 后即可入库。')}
             </div>
             <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-faint);display:grid;grid-template-columns:1fr 1fr;gap:8px">
-              <div><div class="kicker">TOTAL</div><strong>${recs.length}</strong></div>
+              <div><div class="kicker">TOTAL</div><strong>${total}</strong></div>
               <div><div class="kicker">DONE</div><strong>${done}</strong></div>
               <div><div class="kicker">FAILED</div><strong>${failed}</strong></div>
-              <div><div class="kicker">LEFT</div><strong>${recs.length - done}</strong></div>
+              <div><div class="kicker">LEFT</div><strong>${total - done}</strong></div>
             </div>
           </aside>`;
       }

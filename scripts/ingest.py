@@ -122,7 +122,9 @@ def call_llm(prompt: str) -> str:
         response_format={"type": "json_object"},
         messages=[{"role": "user", "content": prompt}],
     )
-    return resp.choices[0].message.content or ""
+    if not getattr(resp, "choices", None):     # 网关报错时 choices 可能为 None
+        raise RuntimeError(f"模型未返回 choices(网关或鉴权异常):{resp}")
+    return (resp.choices[0].message.content or "")
 
 
 def stream_llm(prompt: str):
@@ -155,8 +157,11 @@ def archive_raw(raw: str, ident: str) -> pathlib.Path:
 
 
 def extract(raw: str) -> dict:
-    text = call_llm(EXTRACT_PROMPT.format(raw=raw)).strip()
+    # 走流式累加(与 Web 单条预览同一通路;部分网关只在 stream=True 时返回正常 choices)
+    text = "".join(stream_llm(EXTRACT_PROMPT.format(raw=raw))).strip()
     text = re.sub(r"^```json|```$", "", text, flags=re.M).strip()
+    if not text:
+        raise RuntimeError("模型返回为空")
     return json.loads(text)
 
 

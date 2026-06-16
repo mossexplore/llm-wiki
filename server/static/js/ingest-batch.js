@@ -19,6 +19,11 @@
       };
     }
 
+    // 与后端 _split_records 一致:按独占一行的 --- 切分,去空白
+    function splitBatchRecords(raw) {
+      return raw.split(/^[ \t]*---[ \t]*$/m).map(s => s.trim()).filter(Boolean);
+    }
+
     async function onBatchFile(file) {
       if (!file) return;
       let text = '';
@@ -26,11 +31,16 @@
       if (!text.trim()) { showToast('文件内容为空'); return; }
       const fileInput = document.getElementById('batchFile');
       if (fileInput) fileInput.value = '';   // 允许再次选同一文件
-      runBatchPreview(text);
+      const split = splitBatchRecords(text);
+      if (!split.length) { showToast('未解析到任何记录;请用独占一行的 --- 分隔'); return; }
+      // 先进入"确认切分"阶段,让用户核对分割结果,无误后再并行抽取
+      Object.assign(state, { batchActive: true, batchStage: 'split', batchRaw: text, batchSplit: split, batchRecords: [], batchSummary: null });
+      render();
+      showToast(`已按 --- 切分为 ${split.length} 条,请确认后抽取`);
     }
 
     async function runBatchPreview(raw) {
-      Object.assign(state, { batchActive: true, batchLoading: true, batchRecords: [], batchSummary: null });
+      Object.assign(state, { batchActive: true, batchStage: 'extracting', batchRecords: [], batchSummary: null });
       render();
       try {
         const r = await fetch('/api/ingest/preview_batch', {
@@ -38,23 +48,23 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ raw })
         });
-        if (noBackend(r.status)) { state.batchActive = false; state.batchLoading = false; render(); showToast('后端未连接 · 无法批量解析'); return; }
+        if (noBackend(r.status)) { state.batchStage = 'split'; render(); showToast('后端未连接 · 无法批量抽取'); return; }
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
         state.batchRecords = (data.records || []).map(normBatchRecord);
-        state.batchLoading = false;
+        state.batchStage = 'review';
         render();
         const failed = state.batchRecords.filter(x => x.error).length;
-        showToast(`已解析 ${state.batchRecords.length} 条` + (failed ? ` · ${failed} 条抽取失败,请补全` : ''));
+        showToast(`已抽取 ${state.batchRecords.length} 条` + (failed ? ` · ${failed} 条失败,请补全` : ''));
       } catch (e) {
-        state.batchLoading = false;
+        state.batchStage = 'split';     // 失败回到切分确认页,可重试
         render();
-        showToast('批量解析失败:' + String(e && e.message || e));
+        showToast('批量抽取失败:' + String(e && e.message || e));
       }
     }
 
     function exitBatch() {
-      Object.assign(state, { batchActive: false, batchLoading: false, batchRecords: [], batchSummary: null, step: 1 });
+      Object.assign(state, { batchActive: false, batchStage: 'split', batchRaw: '', batchSplit: [], batchRecords: [], batchSummary: null, step: 1 });
       render();
     }
 
@@ -157,12 +167,41 @@
       return '<span class="badge mono">待入库</span>';
     }
 
+    function renderBatchSplit() {
+      const recs = state.batchSplit;
+      return `
+        <section class="card">
+          <div class="card-head">
+            <div><div class="kicker">BATCH · CONFIRM SPLIT</div><h3>确认切分结果 · 共 ${recs.length} 条</h3></div>
+            <span class="badge mono">未抽取</span>
+          </div>
+          <div class="card-pad">
+            <p class="muted" style="font-size:12.5px;margin:0 0 13px;line-height:1.55">已按独占一行的 <code class="mono">---</code> 把文件切成下列各条原文。确认切分无误后再并行抽取;若不对,返回检查文件中的分隔符。</p>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+              <button class="btn sm" id="batchExit" type="button">${iconBack()}返回粘贴</button>
+              <button class="btn primary" id="batchStartExtract" type="button">${iconSpark()}开始并行抽取(${recs.length} 条)</button>
+            </div>
+            <div style="display:grid;gap:10px">
+              ${recs.map((raw, i) => `
+                <div class="batch-card open">
+                  <div class="batch-head" style="cursor:default">
+                    <div class="batch-idx">${i + 1}</div>
+                    <div class="batch-main"><div class="batch-title">记录 ${i + 1}</div><div class="batch-sub mono">${raw.length} 字</div></div>
+                  </div>
+                  <div class="batch-body"><pre class="codebox" style="max-height:200px;overflow:auto;margin:0">${escapeHtml(raw)}</pre></div>
+                </div>`).join('')}
+            </div>
+          </div>
+        </section>`;
+    }
+
     function renderBatchMain() {
-      if (state.batchLoading) {
+      if (state.batchStage === 'split') return renderBatchSplit();
+      if (state.batchStage === 'extracting') {
         return `
           <section class="card">
             <div class="card-head"><div><div class="kicker">BATCH · MODEL EXTRACTION</div><h3>并行抽取中</h3></div><span class="badge info"><span class="dot pulse"></span>生成中</span></div>
-            <div class="card-pad"><div class="empty">${iconSpin()}<div>正在并行调用模型抽取各条记录…</div></div></div>
+            <div class="card-pad"><div class="empty">${iconSpin()}<div>正在并行调用模型抽取 ${state.batchSplit.length} 条记录…</div></div></div>
           </section>`;
       }
       const recs = state.batchRecords;
@@ -251,6 +290,7 @@
     function bindBatchEvents() {
       const bindId = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
       bindId('batchExit', exitBatch);
+      bindId('batchStartExtract', () => runBatchPreview(state.batchRaw));
       bindId('batchCommitAll', commitBatchAll);
       root.querySelectorAll('[data-batch-toggle]').forEach(el => el.onclick = e => {
         if (e.target.closest('[data-batch-commit]')) return;   // 点"入库"不展开
