@@ -15,7 +15,28 @@
         status: 'pending',          // pending | committing | committed | failed
         statusMsg: '',
         case_file: '',
+        streamText: r.streamText || '',
         expanded: !r.ok             // 抽取失败的默认展开,提醒人工补全
+      };
+    }
+
+    function initBatchStreamRecord(raw, i) {
+      return {
+        raw,
+        title: `记录 ${i + 1}`,
+        category: '未分类',
+        signatures: [''],
+        components: [''],
+        background: '',
+        diagnosis: '',
+        solution: '',
+        ident: '',
+        error: '',
+        status: 'extracting',       // extracting | pending | committing | committed | failed
+        statusMsg: '等待模型输出',
+        case_file: '',
+        streamText: '',
+        expanded: true
       };
     }
 
@@ -42,7 +63,12 @@
     }
 
     async function runBatchPreview(raw) {
-      Object.assign(state, { batchActive: true, batchStage: 'extracting', batchRecords: [], batchSummary: null });
+      Object.assign(state, {
+        batchActive: true,
+        batchStage: 'extracting',
+        batchRecords: state.batchSplit.map(initBatchStreamRecord),
+        batchSummary: null
+      });
       render();
       try {
         const r = await fetch('/api/ingest/preview_batch', {
@@ -51,9 +77,12 @@
           body: JSON.stringify({ raw })
         });
         if (noBackend(r.status)) { state.batchStage = 'split'; render(); showToast('后端未连接 · 无法批量抽取'); return; }
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
-        state.batchRecords = (data.records || []).map(normBatchRecord);
+        if (!r.ok) {
+          let detail = '';
+          try { detail = (await r.json()).detail; } catch (e) { detail = await r.text(); }
+          throw new Error(detail || ('HTTP ' + r.status));
+        }
+        await readBatchPreviewStream(r);
         state.batchStage = 'review';
         render();
         const failed = state.batchRecords.filter(x => x.error).length;
@@ -63,6 +92,71 @@
         render();
         showToast('批量抽取失败:' + String(e && e.message || e));
       }
+    }
+
+    async function readBatchPreviewStream(resp) {
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        lines.forEach(line => handleBatchPreviewLine(line));
+      }
+      if (buf.trim()) handleBatchPreviewLine(buf);
+    }
+
+    function handleBatchPreviewLine(line) {
+      const txt = String(line || '').trim();
+      if (!txt) return;
+      let event = null;
+      try { event = JSON.parse(txt); } catch (e) {
+        console.error('[log-wiki] bad batch stream line', txt, e);
+        return;
+      }
+      handleBatchPreviewEvent(event);
+    }
+
+    function handleBatchPreviewEvent(event) {
+      if (!event || typeof event.index !== 'number') {
+        if (event && event.type === 'summary') state.batchSummary = { ok: event.ok, total: event.count, failed: event.failed };
+        return;
+      }
+      const rec = state.batchRecords[event.index] || initBatchStreamRecord(event.raw || '', event.index);
+      state.batchRecords[event.index] = rec;
+      if (event.type === 'start') {
+        rec.raw = event.raw || rec.raw;
+        rec.status = 'extracting';
+        rec.statusMsg = '模型已开始输出';
+        rec.expanded = true;
+      } else if (event.type === 'delta') {
+        rec.streamText += event.text || '';
+        rec.status = 'extracting';
+        rec.statusMsg = `生成中 · ${rec.streamText.length} 字`;
+      } else if (event.type === 'done') {
+        const next = normBatchRecord(Object.assign({}, event.record || {}, { streamText: rec.streamText }));
+        next.expanded = false;
+        state.batchRecords[event.index] = next;
+      } else if (event.type === 'error') {
+        rec.raw = event.raw || rec.raw;
+        rec.error = event.error || '抽取失败';
+        rec.status = 'failed';
+        rec.statusMsg = rec.error;
+        rec.expanded = true;
+      }
+      scheduleBatchRender();
+    }
+
+    function scheduleBatchRender() {
+      if (scheduleBatchRender.pending) return;
+      scheduleBatchRender.pending = true;
+      requestAnimationFrame(() => {
+        scheduleBatchRender.pending = false;
+        if (state.batchActive && state.batchStage === 'extracting') render();
+      });
     }
 
     function exitBatch() {
@@ -163,6 +257,7 @@
     // ---- 渲染 ----
     function batchStatusBadge(rec) {
       if (rec.status === 'committed') return '<span class="badge ok"><span class="dot"></span>已入库</span>';
+      if (rec.status === 'extracting') return '<span class="badge info"><span class="dot pulse"></span>抽取中</span>';
       if (rec.status === 'committing') return '<span class="badge info"><span class="dot pulse"></span>入库中</span>';
       if (rec.status === 'failed') return '<span class="badge" style="color:var(--danger);border-color:var(--danger-soft)"><span class="dot" style="background:var(--danger)"></span>失败</span>';
       if (rec.error) return '<span class="badge warn"><span class="dot"></span>需补全</span>';
@@ -200,10 +295,18 @@
     function renderBatchMain() {
       if (state.batchStage === 'split') return renderBatchSplit();
       if (state.batchStage === 'extracting') {
+        const done = state.batchRecords.filter(r => r.status === 'pending' || r.status === 'failed').length;
         return `
           <section class="card">
-            <div class="card-head"><div><div class="kicker">BATCH · MODEL EXTRACTION</div><h3>并行抽取中</h3></div><span class="badge info"><span class="dot pulse"></span>生成中</span></div>
-            <div class="card-pad"><div class="empty">${iconSpin()}<div>正在并行调用模型抽取 ${state.batchSplit.length} 条记录…</div></div></div>
+            <div class="card-head">
+              <div><div class="kicker">BATCH · MODEL EXTRACTION</div><h3>并行抽取中</h3></div>
+              <span class="badge info"><span class="dot pulse"></span>${done}/${state.batchSplit.length}</span>
+            </div>
+            <div class="card-pad">
+              <div style="display:grid;gap:10px">
+                ${state.batchRecords.map((rec, i) => renderBatchStreamCard(rec, i)).join('')}
+              </div>
+            </div>
           </section>`;
       }
       const recs = state.batchRecords;
@@ -228,6 +331,27 @@
             </div>
           </div>
         </section>`;
+    }
+
+    function renderBatchStreamCard(rec, i) {
+      const stream = rec.streamText || '';
+      const msg = rec.status === 'extracting' ? (rec.statusMsg || '生成中') : (rec.error ? '抽取失败 · 可手动补全' : '抽取完成');
+      return `
+        <div class="batch-card open st-${rec.status}">
+          <div class="batch-head" style="cursor:default">
+            <div class="batch-idx">${i + 1}</div>
+            <div class="batch-main">
+              <div class="batch-title">${escapeHtml(rec.title || `记录 ${i + 1}`)}</div>
+              <div class="batch-sub mono">${escapeHtml(msg)}</div>
+            </div>
+            ${batchStatusBadge(rec)}
+          </div>
+          <div class="batch-body" style="display:grid;gap:10px">
+            ${rec.error ? `<div class="result-block warn" style="border-left-color:var(--danger);background:var(--danger-soft)"><div class="mono" style="font-size:11.5px;color:var(--danger);white-space:pre-wrap;word-break:break-word">${escapeHtml(rec.error)}</div></div>` : ''}
+            <pre class="codebox batch-stream">${escapeHtml(stream || '等待模型输出…')}${rec.status === 'extracting' ? '<span class="caret"></span>' : ''}</pre>
+            <details class="batch-raw"><summary class="mono muted" style="font-size:11px;cursor:pointer">查看原始记录</summary><pre class="codebox" style="margin-top:8px;max-height:120px;overflow:auto">${escapeHtml(rec.raw)}</pre></details>
+          </div>
+        </div>`;
     }
 
     function renderBatchCard(rec, i) {

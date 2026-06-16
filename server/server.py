@@ -14,9 +14,9 @@ server.py — log-wiki 的 Web 后端(FastAPI)
     uvicorn server.server:app --reload --port 8000
     # 浏览器打开 http://127.0.0.1:8000/
 """
-import sys, datetime, logging, pathlib, re, time, uuid
+import sys, datetime, json, logging, pathlib, queue, re, time, uuid
 from typing import List, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))  # 复用 scripts/ 下的入库与检索逻辑
@@ -301,36 +301,102 @@ class PreviewBatchReq(BaseModel):
     raw: str   # 整个 Markdown 文件内容(多条记录,--- 分隔)
 
 
+def _normalize_json_text(text: str) -> str:
+    txt = (text or "").strip()
+    txt = re.sub(r"^```(?:json)?\s*", "", txt, flags=re.I).strip()
+    txt = re.sub(r"```\s*$", "", txt).strip()
+    if not txt.startswith("{"):
+        first = txt.find("{")
+        last = txt.rfind("}")
+        if first != -1 and last > first:
+            txt = txt[first:last + 1].strip()
+    return txt
+
+
+def _batch_case_record(index: int, raw: str, case: dict) -> dict:
+    return {
+        "index": index, "raw": raw, "ok": True,
+        "title": case.get("title", ""), "category": case.get("category", "未分类"),
+        "signatures": case.get("signatures", []) or [], "components": case.get("components", []) or [],
+        "background": case.get("background", ""), "diagnosis": case.get("diagnosis", ""),
+        "solution": case.get("solution", ""),
+    }
+
+
+def _ndjson(payload: dict) -> str:
+    return json.dumps(payload, ensure_ascii=False) + "\n"
+
+
 @app.post("/api/ingest/preview_batch")
 def ingest_preview_batch(req: PreviewBatchReq):
-    """切分多条原始记录,并行调用 LLM 抽取;一次性返回每条的抽取结果(仅预览,不落库)。"""
+    """切分多条原始记录,并行调用 LLM 抽取;以 NDJSON 流式返回每条的模型输出与结果。"""
     records = _split_records(req.raw)
     if not records:
         raise HTTPException(400, "未解析到任何记录;请用独占一行的 --- 分隔多条")
-    results: List[Optional[dict]] = [None] * len(records)
+    request_id = uuid.uuid4().hex[:12]
 
-    def work(i: int, rec: str):
+    def work(i: int, rec: str, out: queue.Queue):
+        chunk_count = 0
+        acc = ""
+        started = time.perf_counter()
+        out.put({"type": "start", "request_id": request_id, "index": i, "raw": rec})
         try:
-            case = ingest.extract(rec)
-            return i, {
-                "index": i, "raw": rec, "ok": True,
-                "title": case.get("title", ""), "category": case.get("category", "未分类"),
-                "signatures": case.get("signatures", []) or [], "components": case.get("components", []) or [],
-                "background": case.get("background", ""), "diagnosis": case.get("diagnosis", ""),
-                "solution": case.get("solution", ""),
-            }
+            prompt = ingest.EXTRACT_PROMPT.format(raw=rec)
+            for delta in ingest.stream_llm(prompt):
+                chunk_count += 1
+                acc += delta
+                out.put({"type": "delta", "request_id": request_id, "index": i, "text": delta})
+            case = json.loads(_normalize_json_text(acc))
+            out.put({
+                "type": "done",
+                "request_id": request_id,
+                "index": i,
+                "record": _batch_case_record(i, rec, case),
+            })
+            logger.info(
+                "ingest.preview_batch.item.done request_id=%s index=%s chunks=%s chars=%s elapsed_ms=%s",
+                request_id, i, chunk_count, len(acc), int((time.perf_counter() - started) * 1000),
+            )
         except Exception as e:                 # 单条失败不影响其它条
-            return i, {"index": i, "raw": rec, "ok": False, "error": str(e)}
+            logger.exception(
+                "ingest.preview_batch.item.error request_id=%s index=%s chunks=%s chars=%s elapsed_ms=%s",
+                request_id, i, chunk_count, len(acc), int((time.perf_counter() - started) * 1000),
+            )
+            out.put({"type": "error", "request_id": request_id, "index": i, "raw": rec, "error": str(e)})
+        finally:
+            out.put({"type": "finished", "request_id": request_id, "index": i})
 
-    started = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=min(8, len(records))) as ex:
-        for fut in as_completed([ex.submit(work, i, r) for i, r in enumerate(records)]):
-            i, res = fut.result()
-            results[i] = res
-    logger.info("ingest.preview_batch records=%s elapsed_ms=%s",
-                len(records), int((time.perf_counter() - started) * 1000))
-    ok = sum(1 for r in results if r and r["ok"])
-    return {"count": len(records), "ok": ok, "records": results}
+    def gen():
+        started = time.perf_counter()
+        out: queue.Queue = queue.Queue()
+        ok = 0
+        failed = 0
+        finished = 0
+        with ThreadPoolExecutor(max_workers=min(8, len(records))) as ex:
+            futures = [ex.submit(work, i, rec, out) for i, rec in enumerate(records)]
+            while finished < len(records):
+                event = out.get()
+                if event["type"] == "finished":
+                    finished += 1
+                    continue
+                if event["type"] == "done":
+                    ok += 1
+                elif event["type"] == "error":
+                    failed += 1
+                yield _ndjson(event)
+            for fut in futures:
+                fut.result()
+        logger.info(
+            "ingest.preview_batch.done request_id=%s records=%s ok=%s failed=%s elapsed_ms=%s",
+            request_id, len(records), ok, failed, int((time.perf_counter() - started) * 1000),
+        )
+        yield _ndjson({"type": "summary", "request_id": request_id, "count": len(records), "ok": ok, "failed": failed})
+
+    return StreamingResponse(
+        gen(),
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={"X-Request-ID": request_id, "X-Accel-Buffering": "no"},
+    )
 
 
 class CommitBatchReq(BaseModel):

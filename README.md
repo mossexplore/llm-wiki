@@ -43,7 +43,7 @@ uvicorn server.server:app --port 8000   # 在仓库根目录运行
 
 ## 四个页面
 
-- **① 写入知识**:粘贴原始排查记录 → 模型**流式**抽取成结构化案例 → 在页面上复核/修改(尤其 signatures)→ 点「确认入库」才真正写入 `wiki/cases/`(护栏①:确认前不碰知识库)。
+- **① 写入知识**:粘贴原始排查记录 → 模型**流式**抽取成结构化案例 → 在页面上复核/修改(尤其 signatures)→ 点「确认入库」才真正写入 `wiki/cases/`(护栏①:确认前不碰知识库)。上传 Markdown 批量写入时,会先确认 `---` 切分结果,再并行抽取;每条记录都能看到对应的大模型流式输出。
 - **② 知识列表**:展示已入库知识,带入库时间;入库后切到本页自动刷新。右侧复用复核表单查看/编辑详情,「确认更新」覆盖对应 Markdown 并刷新索引、保留 `sources` 与额外章节;支持**删除**(原文 `raw/` 保留以备溯源)。
 - **③ 检索知识**:粘一段日志报错(带时间戳/毫秒数等噪声没关系)→ 返回精确命中的「解决方案」、可能相关候选、或"暂无案例"门控(绝不编造)。
 - **④ 知识图谱**:从 cases / concepts / tags / components / raw sources 构建可拖拽图谱,查看案例、组件、标签与原始记录之间的关系。
@@ -58,7 +58,9 @@ uvicorn server.server:app --port 8000   # 在仓库根目录运行
 ## 接口一览(前端调用,通常无需直接使用)
 
 - `POST /api/ingest/preview` — 流式抽取 JSON,仅预览,不落库。
+- `POST /api/ingest/preview_batch` — 批量并行流式抽取,以 NDJSON 返回每条记录的 start/delta/done/summary 事件。
 - `POST /api/ingest/commit` — 确认入库,写 `raw/sources/` 与 `wiki/cases/`。
+- `POST /api/ingest/commit_batch` — 批量确认入库,逐条写入并汇总结果。
 - `GET /api/knowledge` — 已入库知识列表(含入库时间)。
 - `GET /api/knowledge/{case_file}` — 读取单条知识详情。
 - `PUT /api/knowledge/{case_file}` — 更新单条知识并刷新索引。

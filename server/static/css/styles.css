@@ -205,6 +205,7 @@
     .batch-card.st-committed { border-left: 3px solid var(--success); }
     .batch-card.st-failed { border-left: 3px solid var(--danger); }
     .batch-card.st-committing { border-left: 3px solid var(--accent); }
+    .batch-card.st-extracting { border-left: 3px solid var(--accent); }
     .batch-head { display: flex; align-items: center; gap: 12px; padding: 11px 13px; cursor: pointer; user-select: none; }
     .batch-idx { flex: none; width: 24px; height: 24px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-deep); font-size: 12px; font-weight: 700; }
     .batch-main { flex: 1; min-width: 0; }
@@ -214,6 +215,7 @@
     .batch-chev { flex: none; display: grid; place-items: center; color: var(--text-faint); transition: transform 0.18s var(--ease); }
     .batch-card.open .batch-chev { transform: rotate(180deg); }
     .batch-body { padding: 4px 14px 16px; border-top: 1px solid var(--line-faint); }
+    .batch-stream { min-height: 96px; max-height: 220px; margin: 0; }
     .batch-raw summary { list-style: none; }
     .batch-raw summary::-webkit-details-marker { display: none; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
