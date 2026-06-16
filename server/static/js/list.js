@@ -63,6 +63,30 @@
       }
     }
 
+    async function clearAllKnowledge() {
+      const n = state.knowledgeItems.length;
+      if (!n) return;
+      const ok = await confirmModal({
+        title: '清空全部知识',
+        message: '确定删除全部 ' + n + ' 条知识?此操作不可撤销。\n原始记录 raw/ 仍保留以备溯源,可重新入库。',
+        confirmText: '全部删除', cancelText: '取消', danger: true,
+      });
+      if (!ok) return;
+      try {
+        const r = await fetch('/api/knowledge', { method: 'DELETE' });
+        if (noBackend(r.status)) { showToast('后端未连接 · 无法清空'); return; }
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || '清空失败');
+        state.knowledgeSelected = ''; state.draft = null;
+        state.graph = null; state.graphSelected = '';   // 知识全清,图谱缓存失效
+        showToast('已清空 ' + (data.deleted || n) + ' 条知识');
+        await loadKnowledgeList(false);
+        refreshMeta();
+      } catch (e) {
+        showToast(String(e && e.message || e));
+      }
+    }
+
     async function updateKnowledge() {
       const d = state.draft;
       if (!d || !state.knowledgeSelected) return;
@@ -107,7 +131,10 @@
           <aside class="card">
             <div class="card-head">
               <div><div class="kicker">KNOWLEDGE · VERIFIED</div><h3>知识列表</h3></div>
-              <button class="btn sm" id="reloadKnowledge" type="button">${state.knowledgeLoading ? iconSpin() : iconSearch()}刷新</button>
+              <div style="display:flex;gap:8px;align-items:center">
+                ${state.knowledgeItems.length ? `<button class="btn sm danger" id="clearKnowledge" type="button" title="删除全部知识">${iconTrash()}清空</button>` : ''}
+                <button class="btn sm" id="reloadKnowledge" type="button">${state.knowledgeLoading ? iconSpin() : iconSearch()}刷新</button>
+              </div>
             </div>
             <div class="card-pad">
               ${state.knowledgeError ? `<div class="result-block warn" style="margin-bottom:12px">${escapeHtml(state.knowledgeError)}</div>` : ''}

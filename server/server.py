@@ -497,6 +497,21 @@ def knowledge_list():
     return {"items": items}
 
 
+@app.delete("/api/knowledge")
+def knowledge_clear():
+    """清空全部已入库知识(wiki/cases/ 下的顶层案例)。raw/ 不可变层原文保留以备溯源。"""
+    deleted = []
+    for path in sorted(CASES_DIR.glob("*.md")):
+        if path.name in ("index.md", "log.md"):
+            continue
+        rel = str(path.relative_to(ROOT))
+        path.unlink()
+        _index_remove(path)
+        deleted.append(rel)
+    ingest.update_indexes()
+    return {"ok": True, "deleted": len(deleted), "files": deleted}
+
+
 @app.get("/api/knowledge/{case_file:path}")
 def knowledge_detail(case_file: str):
     return _case_detail(_case_path(case_file))

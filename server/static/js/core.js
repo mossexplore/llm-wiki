@@ -413,6 +413,7 @@
       bind('goQuery', () => setMode('query'));
       bind('runQuery', runQuery);
       bind('reloadKnowledge', () => loadKnowledgeList(false));
+      bind('clearKnowledge', clearAllKnowledge);
       bind('reloadKnowledgeDetail', () => selectKnowledge(state.knowledgeSelected));
       bind('reloadGraph', loadGraph);
       bind('resetGraphLayout', resetGraphLayout);
