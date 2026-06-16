@@ -162,7 +162,17 @@ def extract(raw: str) -> dict:
     text = re.sub(r"^```json|```$", "", text, flags=re.M).strip()
     if not text:
         raise RuntimeError("模型返回为空")
-    return json.loads(text)
+    data = json.loads(text)
+    # 模型有时会把案例包成 [{...}] 或 {"cases":[{...}]};归一化为单个对象
+    if isinstance(data, dict) and len(data) == 1:
+        only = next(iter(data.values()))
+        if isinstance(only, list):
+            data = only
+    if isinstance(data, list):
+        data = next((x for x in data if isinstance(x, dict)), {})
+    if not isinstance(data, dict):
+        raise RuntimeError(f"模型未返回 JSON 对象,实际为 {type(data).__name__}")
+    return data
 
 
 def to_markdown(c: dict, raw_rel: str, status: str = "draft",

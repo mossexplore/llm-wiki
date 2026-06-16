@@ -181,6 +181,10 @@
     }
 
     function toDraft(o, raw) {
+      // 模型偶尔把案例包成 [{...}] 或 {key:[{...}]};归一化为单个对象
+      if (o && !Array.isArray(o) && Object.keys(o).length === 1 && Array.isArray(o[Object.keys(o)[0]])) o = o[Object.keys(o)[0]];
+      if (Array.isArray(o)) o = o.find(x => x && typeof x === 'object' && !Array.isArray(x)) || {};
+      o = o || {};
       return {
         file: o.file || '',
         title: o.title || '',
