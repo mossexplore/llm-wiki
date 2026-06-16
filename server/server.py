@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "scripts"))  # 复用 scripts/ 下的入库与检�
 import ingest                                # noqa: E402
 import graph                                 # noqa: E402
 import query                                 # noqa: E402
+import search_index                          # noqa: E402  检索索引(SQLite+FTS5)同步
 import yaml                                  # noqa: E402
 
 from fastapi import FastAPI, Header, HTTPException            # noqa: E402
@@ -35,6 +36,36 @@ app = FastAPI(title="log-wiki")
 STATIC = pathlib.Path(__file__).resolve().parent / "static"
 logger = logging.getLogger("log_wiki.server")
 logger.setLevel(logging.INFO)
+
+
+def _index_case_file(case_path: pathlib.Path) -> None:
+    """把刚写好的案例文件同步进检索索引;失败不影响主流程(文件才是权威源)。"""
+    try:
+        case = search_index.case_from_file(case_path)
+        if case:
+            search_index.backend.index_case(case)
+    except Exception:
+        logger.exception("search_index.index_case failed file=%s", case_path)
+
+
+def _index_remove(case_path: pathlib.Path) -> None:
+    try:
+        search_index.backend.remove_case(case_path.stem)
+    except Exception:
+        logger.exception("search_index.remove_case failed file=%s", case_path)
+
+
+@app.on_event("startup")
+def _build_search_index() -> None:
+    """启动时从 wiki/cases/ 整库重建索引,确保与磁盘文件一致(含离线手改的情况)。"""
+    try:
+        if search_index.backend.available():
+            n = search_index.backend.reindex_all()
+            logger.info("search_index.reindex_all built=%s db=%s", n, search_index.DB_PATH)
+        else:
+            logger.warning("FTS5 不可用,检索将回退到文件扫描(功能正常,速度较慢)。")
+    except Exception:
+        logger.exception("search_index startup reindex failed")
 
 SAMPLE_RAW = (
     "大促高峰 order-service 一批接口疯狂 500,日志一直刷 "
@@ -259,6 +290,7 @@ def ingest_commit(req: CommitReq):
     case_path = ROOT / "wiki" / "cases" / f"{slug}.md"
     case_path.write_text(md, encoding="utf-8")
     ingest.update_indexes()
+    _index_case_file(case_path)
 
     return {
         "ok": True,
@@ -430,7 +462,9 @@ def ingest_commit_batch(req: CommitBatchReq):
         if not rec.ident:
             rec.ident = f"{stamp}-{i + 1}"           # 批内唯一,避免 raw 文件同名覆盖
         try:
-            results.append({"index": i, "ok": True, **_commit_one(rec, used)})
+            res = _commit_one(rec, used)
+            _index_case_file(ROOT / res["case_file"])
+            results.append({"index": i, "ok": True, **res})
         except Exception as e:
             results.append({"index": i, "ok": False, "error": str(e)})
     ingest.update_indexes()
@@ -474,6 +508,7 @@ def knowledge_delete(case_file: str):
     path = _case_path(case_file)                # 复用校验:限定 cases 目录、.md、非 index
     path.unlink()
     ingest.update_indexes()
+    _index_remove(path)
     return {"ok": True, "case_file": str(path.relative_to(ROOT))}
 
 
@@ -490,6 +525,7 @@ def knowledge_update(case_file: str, req: KnowledgeUpdateReq):
     existing, existing_body = _split_case(path)
     path.write_text(_knowledge_markdown(req, existing, existing_body), encoding="utf-8")
     ingest.update_indexes()
+    _index_case_file(path)
     return {"ok": True, "case_file": str(path.relative_to(ROOT))}
 
 

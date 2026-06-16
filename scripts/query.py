@@ -14,6 +14,12 @@ query.py — 用一段日志报错,从 wiki/cases/ 里找相似案例
 """
 import sys, re, pathlib, time
 
+try:
+    import search_index            # 与本文件同目录(server.py 已把 scripts/ 加入 sys.path)
+except ImportError:                # 直接 `python scripts/query.py` 时补一下路径
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import search_index
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CASES_DIR = ROOT / "wiki" / "cases"
 
@@ -92,7 +98,18 @@ def search(log: str) -> dict:
     返回 {"mode": "exact"|"fuzzy"|"none", "hits": [...], "elapsed_ms": int}。
     mode=exact 时 hits 含 solution;mode=fuzzy 时仅候选(需人工判断)。
     elapsed_ms 为本次检索的纯后端耗时(不含网络/序列化),单位毫秒。
+
+    优先走 SQLite + FTS5 索引(模糊召回更准、文档多时更快);索引不可用
+    (如 sqlite 未编译 FTS5)时,自动回退到下面的纯文件扫描,保证零依赖可用。
     """
+    res = search_index.backend.search(log)
+    if res is not None:
+        return res
+    return _search_files(log)
+
+
+def _search_files(log: str) -> dict:
+    """纯文件兜底实现:精确 signature 子串命中 → token 重合度模糊召回 → 无命中门控。"""
     log_low = log.lower()
     started = time.perf_counter()
 

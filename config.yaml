@@ -1,6 +1,0 @@
-# OpenAI 接口配置样例 —— 真实密钥请只放在本地私有配置中
-env: "dev"                                 # 环境标识;dev 时 ingest.py 会设置 NO_PROXY=127.0.0.1
-openai:
-  api_key: "sk-123"                  # 必填
-  base_url: "http://127.0.0.1:10088/v1"  # 可选;走代理/Azure/本地兼容网关时改这里,留空则用官方默认
-  model: "maas-glm-5.1-zhipu"                         # 可选;抽取用的模型名,默认 maas-glm-5.1-zhipu
