@@ -158,7 +158,7 @@
                   <button class="btn primary" id="doPreview" type="button">${iconSpark()}解析抽取</button>
                 </div>
               </div>
-              <p class="muted" style="font-size:11.5px;margin:11px 0 0;line-height:1.5">批量:上传一个含多条记录的 Markdown,记录之间用独占一行的 <code class="mono">---</code> 分隔,模型并行抽取,可逐条或一次性入库。</p>
+              <p class="muted" style="font-size:11.5px;margin:11px 0 0;line-height:1.5">批量:上传一个含多条记录的 Markdown,系统会按一级标题 <code class="mono"># 标题</code> 切分内容,模型并行抽取,可逐条或一次性入库。</p>
             </div>
           </section>`;
       }
@@ -260,4 +260,3 @@
           </div>
         </section>`;
     }
-

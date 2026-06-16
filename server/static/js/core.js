@@ -357,7 +357,7 @@
             <div class="kicker" style="margin-bottom:14px">BATCH INGEST</div>
             <div class="badge mono" style="margin-bottom:14px">${stageLabel}</div>
             <div style="display:grid;gap:12px">
-              ${modeNote('var(--accent)', '确认切分', '先按 --- 切分并展示各条原文,确认无误后再抽取。')}
+              ${modeNote('var(--accent)', '确认切分', '先按 Markdown 一级标题 # 切分并展示各条原文,确认无误后再抽取。')}
               ${modeNote('var(--success)', '逐条/批量', '抽取后可对每条单独入库,也可一次性全部入库。')}
               ${modeNote('var(--warning)', '需补全', '抽取失败的记录会标红展开,补全标题与 signatures 后即可入库。')}
             </div>
@@ -464,4 +464,3 @@
           </div>`;
       bindEvents();
     }
-

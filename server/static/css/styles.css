@@ -110,9 +110,9 @@
     .rule { height: 20px; }
     .grid {
       display: grid;
-      grid-template-columns: 244px 1fr;
-      gap: 22px;
-      align-items: start;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 16px;
+      align-items: stretch;
       height: 100%;
       min-height: 0;
     }
@@ -124,6 +124,10 @@
       min-height: 0;
       overflow: hidden;
       min-width: 0;
+    }
+    .main:has(> .card:only-child),
+    .main:has(> .knowledge-layout:only-child) {
+      grid-template-rows: minmax(0, 1fr);
     }
 
     .kicker {
@@ -147,13 +151,14 @@
       flex-direction: column;
       min-height: 0;
     }
-    .main > .card:only-child { min-height: 100%; }
+    .main > .card:only-child { height: 100%; min-height: 100%; }
     .main > .card:last-child:not(:only-child) { min-height: 0; }
-    .main > .knowledge-layout:only-child { min-height: 100%; }
+    .main > .knowledge-layout:only-child { height: 100%; min-height: 100%; }
     .rail {
       padding: 20px 18px;
       position: sticky;
       top: 24px;
+      height: 100%;
       max-height: 100%;
       overflow: auto;
     }
@@ -387,16 +392,24 @@
     }
     .result-block.warn { border-left-color: var(--warning); background: var(--warning-soft); }
     .empty { display: grid; place-items: center; gap: 8px; padding: 36px 20px; text-align: center; color: var(--text-mute); }
-    .graph-shell { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: stretch; }
+    .graph-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 16px;
+      align-items: stretch;
+      height: 100%;
+      min-height: 0;
+    }
     .graph-stage {
       position: relative;
-      min-height: 520px;
+      height: 100%;
+      min-height: 0;
       border-radius: var(--r-md);
       border: 1px solid var(--line-faint);
       background: linear-gradient(180deg, #fbfcfe, var(--surface-inset));
       overflow: hidden;
     }
-    .graph-stage svg { width: 100%; height: 520px; display: block; }
+    .graph-stage svg { width: 100%; height: 100%; display: block; }
     .graph-edge { stroke: rgba(58, 70, 90, 0.22); stroke-width: 1.5; }
     .graph-edge.on { stroke: var(--accent); stroke-width: 2.4; }
     .graph-node { cursor: grab; touch-action: none; user-select: none; transition: opacity 0.14s var(--ease); }
@@ -405,7 +418,7 @@
     .graph-node circle { stroke: rgba(255,255,255,0.9); stroke-width: 2; filter: drop-shadow(0 4px 8px rgba(20,30,50,0.16)); }
     .graph-node.active circle { stroke: var(--accent-deep); stroke-width: 3; }
     .graph-node text { font-size: 11.5px; fill: var(--text-dim); pointer-events: none; font-weight: 600; }
-    .graph-detail { display: grid; gap: 12px; align-content: start; }
+    .graph-detail { display: grid; gap: 12px; align-content: start; min-height: 0; overflow: auto; }
     .graph-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
     .graph-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: var(--r-full); background: var(--surface-inset); border: 1px solid var(--line); color: var(--text-mute); font-size: 11px; }
     .graph-list { display: grid; gap: 7px; }
@@ -490,7 +503,7 @@
       text-align: center;
       flex: none;
     }
-    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: stretch; }
     .mobile-only { display: none; }
 
     @media (max-width: 840px) {
