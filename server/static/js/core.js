@@ -340,7 +340,7 @@
             <div class="kicker" style="margin-bottom:14px">MATCH MODES</div>
             <div style="display:grid;gap:14px">
               ${modeNote('var(--success)', '精确命中', 'signature 原文匹配,可直接照方案处理。')}
-              ${modeNote('var(--warning)', '可能相关', '按重合度排序,需人工判断,勿照搬。')}
+              ${modeNote('var(--warning)', '可能相关', 'BM25 全文检索召回,按相关度排序,需人工判断,勿照搬。')}
               ${modeNote('var(--text-faint)', '暂无案例', '勿编造方案;排查后到写入页入库。')}
             </div>
             ${statsHtml()}

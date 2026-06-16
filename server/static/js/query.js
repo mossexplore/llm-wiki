@@ -39,6 +39,7 @@
       if (log.includes('hikari') || log.includes('connection is not available')) {
         base = { mode: 'exact', hits: [{ title: SAMPLE_CASE_FALLBACK.title, status: 'verified', file: 'wiki/cases/hikari-pool-exhausted.md', matched: ['HikariPool-1 - Connection is not available'], solution: SAMPLE_CASE_FALLBACK.solution }] };
       } else if (log.includes('oom') || log.includes('outofmemory') || log.includes('timeout') || log.includes('timed out')) {
+        // 无后端时的占位演示数据;score 模拟后端的 BM25 相关度(真实检索为实时计算)
         base = { mode: 'fuzzy', hits: [{ title: 'JVM Metaspace OOM', score: 0.42, file: 'wiki/cases/jvm-metaspace-oom.md' }, { title: 'Kafka 消费组 Rebalance 风暴', score: 0.31, file: 'wiki/cases/kafka-rebalance.md' }] };
       } else {
         base = { mode: 'none', hits: [] };
@@ -91,11 +92,11 @@
           <section class="card">
             <div class="card-head"><div><div class="kicker">RESULT · POSSIBLY RELATED</div><h3>未精确命中 · 以下可能相关</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${elapsedBadge}<span class="badge warn">需人工判断</span></div></div>
             <div class="card-pad" style="display:grid;gap:10px">
-              <p class="muted" style="margin:0 0 2px;font-size:12px">按重合度排序,仅供参考,勿直接照搬其方案。</p>
+              <p class="muted" style="margin:0 0 2px;font-size:12px">按 BM25 相关度排序(相对排序分,非置信度),仅供参考,勿直接照搬其方案。</p>
               ${r.hits.map(h => `
                 <div class="result-block warn" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
                   <div style="min-width:0"><strong style="font-size:13.5px;display:block;line-height:1.4">${escapeHtml(h.title)}</strong><div class="mono muted" style="font-size:11px;margin-top:5px;word-break:break-all">${escapeHtml(h.file)}</div></div>
-                  <span class="badge warn mono">重合 ${escapeHtml(typeof h.score === 'number' ? h.score.toFixed(2) : h.score)}</span>
+                  <span class="badge warn mono" title="FTS5 BM25 相关度,越大越相关;相对排序分,非 0-1 置信度">相关度 ${escapeHtml(typeof h.score === 'number' ? h.score.toFixed(2) : h.score)}</span>
                 </div>`).join('')}
             </div>
           </section>`;
