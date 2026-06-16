@@ -30,13 +30,13 @@ EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原
 **只输出 JSON**,不要额外文字。字段:
 - title: 简短问题名
 - description: 单句摘要,用于索引和检索预览
-- category: 类别(数据库/内存/网络/中间件/配置 等)
+- category: 类别(内存/网络/异常退出/训练卡住 等)
 - tags: 字符串列表,短标签,如 database / hikari / timeout
 - signatures: 字符串列表 —— 用户最可能粘贴的报错原文、异常类全名、错误码。
   【必须原文照搬,不得改写、翻译或概括】这是检索命中的命门。
 - components: 涉及的服务/组件列表
-- background / diagnosis / solution: 问题背景 / 定位过程 / 解决方案
-信息缺失就留空字符串或空列表,绝不编造。
+- background / diagnosis / solution: 问题背景（或问题现象） / 定位过程 / 解决方案（排查步骤）
+信息缺失就留空字符串或空列表,绝不编造。特别是定位过程可能为空，不要编造定位过程。
 原始记录:
 ---
 {raw}
