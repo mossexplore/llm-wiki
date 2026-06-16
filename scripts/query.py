@@ -12,7 +12,7 @@ query.py — 用一段日志报错,从 wiki/cases/ 里找相似案例
     python query.py "把整段报错粘进来"
     cat error.log | python query.py -
 """
-import sys, re, pathlib
+import sys, re, pathlib, time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CASES_DIR = ROOT / "wiki" / "cases"
@@ -89,10 +89,17 @@ def annotate(c) -> str:
 def search(log: str) -> dict:
     """检索核心:返回结构化结果,供 CLI 与 web 后端共用。
 
-    返回 {"mode": "exact"|"fuzzy"|"none", "hits": [...]}。
+    返回 {"mode": "exact"|"fuzzy"|"none", "hits": [...], "elapsed_ms": int}。
     mode=exact 时 hits 含 solution;mode=fuzzy 时仅候选(需人工判断)。
+    elapsed_ms 为本次检索的纯后端耗时(不含网络/序列化),单位毫秒。
     """
     log_low = log.lower()
+    started = time.perf_counter()
+
+    def _done(payload: dict) -> dict:
+        payload["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+        return payload
+
     cases = load_cases()
 
     # 1) 精确命中:signature 作为子串出现在日志里
@@ -110,7 +117,7 @@ def search(log: str) -> dict:
                 "solution": solution_of(c["body"]),
             })
     if exact:
-        return {"mode": "exact", "hits": exact}
+        return _done({"mode": "exact", "hits": exact})
 
     # 2) 模糊召回:token 重合度
     log_tokens = tokenize(log)
@@ -123,10 +130,10 @@ def search(log: str) -> dict:
                            "score": score, "status": c["status"]})
     scored.sort(key=lambda x: -x["score"])
     if scored:
-        return {"mode": "fuzzy", "hits": scored[:3]}
+        return _done({"mode": "fuzzy", "hits": scored[:3]})
 
     # 3) 命中门控
-    return {"mode": "none", "hits": []}
+    return _done({"mode": "none", "hits": []})
 
 
 def main():

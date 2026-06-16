@@ -3,16 +3,17 @@
       state.querying = true;
       state.result = null;
       render();
+      const t0 = performance.now();
       try {
         const r = await fetch('/api/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ log: state.logText })
         });
-        if (noBackend(r.status)) return demoQuery();
+        if (noBackend(r.status)) return demoQuery(t0);
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || '检索失败');
-        state.result = data;
+        state.result = withElapsed(data, t0);
         state.querying = false;
         render();
       } catch (e) {
@@ -22,15 +23,27 @@
       }
     }
 
-    function demoQuery() {
+    // 取检索耗时(ms):优先用后端纯检索耗时;缺失时用前端端到端耗时兜底。
+    function withElapsed(data, t0) {
+      const ms = Math.round(
+        typeof data.elapsed_ms === 'number'
+          ? data.elapsed_ms
+          : (performance.now() - t0)
+      );
+      return Object.assign({}, data, { elapsed_ms: ms });
+    }
+
+    function demoQuery(t0) {
       const log = state.logText.toLowerCase();
+      let base;
       if (log.includes('hikari') || log.includes('connection is not available')) {
-        state.result = { mode: 'exact', hits: [{ title: SAMPLE_CASE_FALLBACK.title, status: 'verified', file: 'wiki/cases/hikari-pool-exhausted.md', matched: ['HikariPool-1 - Connection is not available'], solution: SAMPLE_CASE_FALLBACK.solution }] };
+        base = { mode: 'exact', hits: [{ title: SAMPLE_CASE_FALLBACK.title, status: 'verified', file: 'wiki/cases/hikari-pool-exhausted.md', matched: ['HikariPool-1 - Connection is not available'], solution: SAMPLE_CASE_FALLBACK.solution }] };
       } else if (log.includes('oom') || log.includes('outofmemory') || log.includes('timeout') || log.includes('timed out')) {
-        state.result = { mode: 'fuzzy', hits: [{ title: 'JVM Metaspace OOM', score: 0.42, file: 'wiki/cases/jvm-metaspace-oom.md' }, { title: 'Kafka 消费组 Rebalance 风暴', score: 0.31, file: 'wiki/cases/kafka-rebalance.md' }] };
+        base = { mode: 'fuzzy', hits: [{ title: 'JVM Metaspace OOM', score: 0.42, file: 'wiki/cases/jvm-metaspace-oom.md' }, { title: 'Kafka 消费组 Rebalance 风暴', score: 0.31, file: 'wiki/cases/kafka-rebalance.md' }] };
       } else {
-        state.result = { mode: 'none', hits: [] };
+        base = { mode: 'none', hits: [] };
       }
+      state.result = withElapsed(base, t0);
       state.querying = false;
       render();
       showToast('后端未连接 · 已演示检索结果');
@@ -50,10 +63,14 @@
     }
 
     function renderResults(r) {
+      const elapsed = typeof r.elapsed_ms === 'number' ? r.elapsed_ms : null;
+      const elapsedBadge = elapsed != null
+        ? `<span class="badge info mono">${elapsed} ms</span>`
+        : '';
       if (r.mode === 'exact') {
         return `
           <section class="card">
-            <div class="card-head"><div><div class="kicker">RESULT · EXACT MATCH</div><h3>精确命中 ${r.hits.length} 个案例</h3></div><span class="badge ok">${iconCheck()}EXACT</span></div>
+            <div class="card-head"><div><div class="kicker">RESULT · EXACT MATCH</div><h3>精确命中 ${r.hits.length} 个案例</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${elapsedBadge}<span class="badge ok">${iconCheck()}EXACT</span></div></div>
             <div class="card-pad" style="display:grid;gap:12px">
               ${r.hits.map(h => `
                 <div class="result-block">
@@ -72,7 +89,7 @@
       if (r.mode === 'fuzzy') {
         return `
           <section class="card">
-            <div class="card-head"><div><div class="kicker">RESULT · POSSIBLY RELATED</div><h3>未精确命中 · 以下可能相关</h3></div><span class="badge warn">需人工判断</span></div>
+            <div class="card-head"><div><div class="kicker">RESULT · POSSIBLY RELATED</div><h3>未精确命中 · 以下可能相关</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${elapsedBadge}<span class="badge warn">需人工判断</span></div></div>
             <div class="card-pad" style="display:grid;gap:10px">
               <p class="muted" style="margin:0 0 2px;font-size:12px">按重合度排序,仅供参考,勿直接照搬其方案。</p>
               ${r.hits.map(h => `
@@ -85,6 +102,7 @@
       }
       return `
         <section class="card">
+          <div class="card-head"><div><div class="kicker">RESULT · NO MATCH</div><h3>知识库中暂无相关案例</h3></div>${elapsedBadge}</div>
           <div class="card-pad">
             <div class="empty">
               ${iconInfo()}
