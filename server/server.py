@@ -270,8 +270,13 @@ def ingest_commit(req: CommitReq):
 
 # ---------------- 批量入库:上传含多条记录(--- 分隔)的 Markdown ----------------
 def _split_records(raw: str) -> List[str]:
-    """按"独占一行的 ---"切分多条原始记录,去空白。"""
-    parts = re.split(r"(?m)^[ \t]*---[ \t]*$", raw)
+    """按"独占一行的 --- (3+ 连字符)"切分多条原始记录,去空白。
+
+    先把 CRLF/CR 归一化为 LF,否则 Windows 文件里 `---\\r` 匹配不到分隔符,
+    整个文件会被当成一条。
+    """
+    raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+    parts = re.split(r"(?m)^[ \t]*-{3,}[ \t]*$", raw)
     return [p.strip() for p in parts if p.strip()]
 
 

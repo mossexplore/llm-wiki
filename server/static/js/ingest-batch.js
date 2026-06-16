@@ -21,7 +21,9 @@
 
     // 与后端 _split_records 一致:按独占一行的 --- 切分,去空白
     function splitBatchRecords(raw) {
-      return raw.split(/^[ \t]*---[ \t]*$/m).map(s => s.trim()).filter(Boolean);
+      // 先归一化换行(CRLF/CR → LF),否则 Windows 文件的 ---\r 匹配不到,整文件会变成一条
+      return raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+        .split(/^[ \t]*-{3,}[ \t]*$/m).map(s => s.trim()).filter(Boolean);
     }
 
     async function onBatchFile(file) {
