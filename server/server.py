@@ -16,6 +16,7 @@ server.py — log-wiki 的 Web 后端(FastAPI)
 """
 import sys, datetime, logging, pathlib, re, time, uuid
 from typing import List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))  # 复用 scripts/ 下的入库与检索逻辑
@@ -265,6 +266,95 @@ def ingest_commit(req: CommitReq):
         "case_file": str(case_path.relative_to(ROOT)),
         "slug": slug,
     }
+
+
+# ---------------- 批量入库:上传含多条记录(--- 分隔)的 Markdown ----------------
+def _split_records(raw: str) -> List[str]:
+    """按"独占一行的 ---"切分多条原始记录,去空白。"""
+    parts = re.split(r"(?m)^[ \t]*---[ \t]*$", raw)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _commit_one(req: CommitReq, used_slugs: set) -> dict:
+    """写一条 verified 案例;批量时用 used_slugs 去重 slug,避免同标题互相覆盖。"""
+    ident = req.ident or datetime.datetime.now().strftime("%H%M%S")
+    raw_path = ingest.archive_raw(req.raw, ident)
+    raw_rel = str(raw_path.relative_to(ROOT))
+    md = ingest.to_markdown(req.model_dump(), raw_rel, status="verified", confidence="high")
+    slug = base = ingest.slugify(req.title)
+    n = 2
+    while slug in used_slugs or (ROOT / "wiki" / "cases" / f"{slug}.md").exists():
+        slug = f"{base}-{n}"
+        n += 1
+    used_slugs.add(slug)
+    case_path = ROOT / "wiki" / "cases" / f"{slug}.md"
+    case_path.write_text(md, encoding="utf-8")
+    return {"case_file": str(case_path.relative_to(ROOT)), "raw_file": raw_rel, "slug": slug}
+
+
+class PreviewBatchReq(BaseModel):
+    raw: str   # 整个 Markdown 文件内容(多条记录,--- 分隔)
+
+
+@app.post("/api/ingest/preview_batch")
+def ingest_preview_batch(req: PreviewBatchReq):
+    """切分多条原始记录,并行调用 LLM 抽取;一次性返回每条的抽取结果(仅预览,不落库)。"""
+    records = _split_records(req.raw)
+    if not records:
+        raise HTTPException(400, "未解析到任何记录;请用独占一行的 --- 分隔多条")
+    results: List[Optional[dict]] = [None] * len(records)
+
+    def work(i: int, rec: str):
+        try:
+            case = ingest.extract(rec)
+            return i, {
+                "index": i, "raw": rec, "ok": True,
+                "title": case.get("title", ""), "category": case.get("category", "未分类"),
+                "signatures": case.get("signatures", []) or [], "components": case.get("components", []) or [],
+                "background": case.get("background", ""), "diagnosis": case.get("diagnosis", ""),
+                "solution": case.get("solution", ""),
+            }
+        except Exception as e:                 # 单条失败不影响其它条
+            return i, {"index": i, "raw": rec, "ok": False, "error": str(e)}
+
+    started = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=min(8, len(records))) as ex:
+        for fut in as_completed([ex.submit(work, i, r) for i, r in enumerate(records)]):
+            i, res = fut.result()
+            results[i] = res
+    logger.info("ingest.preview_batch records=%s elapsed_ms=%s",
+                len(records), int((time.perf_counter() - started) * 1000))
+    ok = sum(1 for r in results if r and r["ok"])
+    return {"count": len(records), "ok": ok, "records": results}
+
+
+class CommitBatchReq(BaseModel):
+    records: List[CommitReq]
+
+
+@app.post("/api/ingest/commit_batch")
+def ingest_commit_batch(req: CommitBatchReq):
+    """一次性把多条已复核记录入库;逐条写,返回每条结果,最后统一刷新索引。"""
+    if not req.records:
+        raise HTTPException(400, "没有要入库的记录")
+    used: set = set()
+    stamp = datetime.datetime.now().strftime("%H%M%S")
+    results = []
+    for i, rec in enumerate(req.records):
+        sigs = [s for s in rec.signatures if s and s.strip()]
+        if not rec.title.strip() or not sigs:
+            results.append({"index": i, "ok": False, "error": "标题或 signatures 为空"})
+            continue
+        rec.signatures = sigs
+        rec.components = [c for c in rec.components if c and c.strip()]
+        if not rec.ident:
+            rec.ident = f"{stamp}-{i + 1}"           # 批内唯一,避免 raw 文件同名覆盖
+        try:
+            results.append({"index": i, "ok": True, **_commit_one(rec, used)})
+        except Exception as e:
+            results.append({"index": i, "ok": False, "error": str(e)})
+    ingest.update_indexes()
+    return {"ok": sum(1 for r in results if r["ok"]), "total": len(results), "results": results}
 
 
 @app.get("/api/knowledge")

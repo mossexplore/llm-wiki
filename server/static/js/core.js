@@ -20,6 +20,11 @@
       draft: null,
       committing: false,
       committed: null,
+      batchActive: false,
+      batchLoading: false,
+      batchRecords: [],
+      batchCommitting: false,
+      batchSummary: null,
       logText: '',
       querying: false,
       result: null,
@@ -66,6 +71,8 @@
       return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
     }
     function iconFile() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>'; }
+    function iconUpload() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M17 8l-5-5-5 5"></path><path d="M12 3v12"></path></svg>'; }
+    function iconChevron() { return '<svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>'; }
     function iconSpark() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 8v6"></path><path d="M2 12h6m8 0h6"></path><path d="M5 5l4 4m6 6 4 4"></path><path d="M19 5l-4 4m-6 6-4 4"></path></svg>'; }
     function iconSpin() { return '<svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"></path></svg>'; }
 
@@ -333,6 +340,26 @@
             ${statsHtml()}
           </aside>`;
       }
+      if (state.batchActive) {
+        const recs = state.batchRecords;
+        const done = recs.filter(r => r.status === 'committed').length;
+        const failed = recs.filter(r => r.status === 'failed').length;
+        return `
+          <aside class="card rail">
+            <div class="kicker" style="margin-bottom:14px">BATCH INGEST</div>
+            <div style="display:grid;gap:12px">
+              ${modeNote('var(--accent)', '并行抽取', '多条记录用 --- 分隔,模型并行抽取,效率更高。')}
+              ${modeNote('var(--success)', '逐条/批量', '可对每条单独确认入库,也可一次性全部入库。')}
+              ${modeNote('var(--warning)', '需补全', '抽取失败的记录会标红展开,补全标题与 signatures 后即可入库。')}
+            </div>
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-faint);display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div><div class="kicker">TOTAL</div><strong>${recs.length}</strong></div>
+              <div><div class="kicker">DONE</div><strong>${done}</strong></div>
+              <div><div class="kicker">FAILED</div><strong>${failed}</strong></div>
+              <div><div class="kicker">LEFT</div><strong>${recs.length - done}</strong></div>
+            </div>
+          </aside>`;
+      }
       return `
         <aside class="card rail">
           <div class="kicker" style="margin-bottom:16px">INGEST PIPELINE</div>
@@ -365,6 +392,10 @@
       bind('loadSample', loadSample);
       bind('doPreview', doPreview);
       bind('retryPreview', doPreview);
+      bind('batchPick', () => { const f = document.getElementById('batchFile'); if (f) f.click(); });
+      const batchFile = document.getElementById('batchFile');
+      if (batchFile) batchFile.onchange = e => onBatchFile(e.target.files && e.target.files[0]);
+      if (state.batchActive && typeof bindBatchEvents === 'function') bindBatchEvents();
       bind('backToPaste', () => { state.step = 1; state.parseErr = ''; render(); });
       bind('addSig', () => addList('signatures'));
       bind('addComp', () => addList('components'));

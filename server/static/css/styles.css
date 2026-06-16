@@ -197,6 +197,25 @@
     .modal-title { font-size: 15px; font-weight: 700; color: var(--text); }
     .modal-msg { margin-top: 7px; font-size: 13px; line-height: 1.6; color: var(--text-mute); white-space: pre-line; }
     .modal-actions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; }
+
+    /* 批量复核卡片 */
+    .batch-card { border: 1px solid var(--line-faint); border-radius: var(--r-md); background: var(--surface-inset); overflow: hidden; transition: border-color 0.14s var(--ease); }
+    .batch-card:hover { border-color: var(--line); }
+    .batch-card.open { border-color: var(--line-strong); background: var(--surface-1); }
+    .batch-card.st-committed { border-left: 3px solid var(--success); }
+    .batch-card.st-failed { border-left: 3px solid var(--danger); }
+    .batch-card.st-committing { border-left: 3px solid var(--accent); }
+    .batch-head { display: flex; align-items: center; gap: 12px; padding: 11px 13px; cursor: pointer; user-select: none; }
+    .batch-idx { flex: none; width: 24px; height: 24px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-deep); font-size: 12px; font-weight: 700; }
+    .batch-main { flex: 1; min-width: 0; }
+    .batch-title { font-size: 13px; font-weight: 650; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .batch-sub { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+    .batch-commit { flex: none; }
+    .batch-chev { flex: none; display: grid; place-items: center; color: var(--text-faint); transition: transform 0.18s var(--ease); }
+    .batch-card.open .batch-chev { transform: rotate(180deg); }
+    .batch-body { padding: 4px 14px 16px; border-top: 1px solid var(--line-faint); }
+    .batch-raw summary { list-style: none; }
+    .batch-raw summary::-webkit-details-marker { display: none; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .field {

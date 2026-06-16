@@ -139,6 +139,7 @@
     }
 
     function renderIngestMain() {
+      if (state.batchActive) return renderBatchMain();
       if (state.step === 1) {
         return `
           <section class="card">
@@ -147,12 +148,17 @@
               <p class="muted" style="font-size:12.5px;margin:0 0 11px;line-height:1.55">把工单 / 对话 / 笔记原文粘进来,模型会流式抽取成结构化案例。此步不写入,确认后才入库。</p>
               <textarea id="rawInput" class="field mono" spellcheck="false" placeholder="例:大促高峰 order-service 一批接口疯狂 500,日志一直刷 HikariPool-1 - Connection is not available, request timed out after 30007ms……" style="height:208px;font-size:12.5px;line-height:1.62">${escapeHtml(state.rawInput)}</textarea>
               <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:13px;flex-wrap:wrap">
-                <button class="btn sm ghost" id="loadSample" type="button">${iconFile()}载入示例</button>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <button class="btn sm ghost" id="loadSample" type="button">${iconFile()}载入示例</button>
+                  <button class="btn sm ghost" id="batchPick" type="button">${iconUpload()}上传 Markdown(批量)</button>
+                  <input id="batchFile" type="file" accept=".md,.markdown,.txt" style="display:none">
+                </div>
                 <div style="display:flex;align-items:center;gap:13px">
                   <span class="mono muted" style="font-size:11px">${state.rawInput ? state.rawInput.length + ' 字' : ''}</span>
                   <button class="btn primary" id="doPreview" type="button">${iconSpark()}解析抽取</button>
                 </div>
               </div>
+              <p class="muted" style="font-size:11.5px;margin:11px 0 0;line-height:1.5">批量:上传一个含多条记录的 Markdown,记录之间用独占一行的 <code class="mono">---</code> 分隔,模型并行抽取,可逐条或一次性入库。</p>
             </div>
           </section>`;
       }
