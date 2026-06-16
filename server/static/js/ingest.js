@@ -254,8 +254,8 @@
               <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--r-md);background:var(--surface-inset);border:1px solid var(--line-faint)"><span class="kicker">RAW</span><code class="mono" style="font-size:12px;color:var(--text-mute);word-break:break-all">${escapeHtml(c.raw_file || '')}</code></div>
             </div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
-              <button class="btn primary" id="resetIngest" type="button">${iconPlus()}再写入一条</button>
-              <button class="btn" id="goQuery" type="button">${iconSearch()}去检索</button>
+              <button class="btn sm primary" id="resetIngest" type="button">${iconPlus()}再写入一条</button>
+              <button class="btn sm" id="goQuery" type="button">${iconSearch()}去检索</button>
             </div>
           </div>
         </section>`;

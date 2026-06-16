@@ -130,8 +130,8 @@
         <section class="knowledge-layout">
           <aside class="card">
             <div class="card-head">
-              <div><div class="kicker">KNOWLEDGE · VERIFIED</div><h3>知识列表</h3></div>
-              <div style="display:flex;gap:8px;align-items:center">
+              <div style="min-width:0"><div class="kicker" style="overflow:hidden;text-overflow:ellipsis">KNOWLEDGE · VERIFIED</div><h3>知识列表</h3></div>
+              <div style="display:flex;gap:8px;align-items:center;flex:none;flex-wrap:nowrap">
                 ${state.knowledgeItems.length ? `<button class="btn sm danger" id="clearKnowledge" type="button" title="删除全部知识">${iconTrash()}清空</button>` : ''}
                 <button class="btn sm" id="reloadKnowledge" type="button">${state.knowledgeLoading ? iconSpin() : iconSearch()}刷新</button>
               </div>
