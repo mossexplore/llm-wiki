@@ -247,6 +247,95 @@
       if (sc) sc.scrollTop = sc.scrollHeight;
     }
 
+    // wiki 来源 chip:可点击,点击弹出该知识详情
+    function chatRefsHtml(refs) {
+      const list = (refs || []).filter(Boolean);
+      if (!list.length) return '';
+      return '<div class="chat-refs"><span class="chat-refs-label">来源 wiki:</span>' +
+        list.map(rf => '<button class="chat-ref mono" type="button" data-wiki-file="' + escapeHtml(rf.file) + '" title="点击查看知识详情:' + escapeHtml(rf.file) + '">' + iconFile() + escapeHtml(rf.title || rf.file) + '</button>').join('') +
+        '</div>';
+    }
+
+    async function openWikiDetail(file) {
+      if (!file) return;
+      const mask = wikiModalShell('加载中…', '<div class="empty">' + iconSpin() + '<div>正在加载知识详情</div></div>');
+      try {
+        const r = await fetch('/api/knowledge/' + file.split('/').map(encodeURIComponent).join('/'));
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || '加载失败');
+        wikiModalFill(mask, data);
+      } catch (e) {
+        wikiModalFill(mask, null, String(e && e.message || e));
+      }
+    }
+
+    // 构造弹窗外壳(遮罩+可滚动盒子),返回 mask 元素;内容后续填充
+    function wikiModalShell(title, bodyHtml) {
+      const mask = document.createElement('div');
+      mask.className = 'modal-mask';
+      mask.innerHTML =
+        '<div class="modal-box wiki-modal" role="dialog" aria-modal="true">' +
+          '<div class="wiki-modal-head">' +
+            '<div class="wiki-modal-title" data-role="title">' + escapeHtml(title) + '</div>' +
+            '<button class="wiki-modal-close" type="button" data-act="close" title="关闭">✕</button>' +
+          '</div>' +
+          '<div class="wiki-modal-body" data-role="body">' + bodyHtml + '</div>' +
+        '</div>';
+      function close() {
+        mask.classList.remove('show');
+        document.removeEventListener('keydown', onKey);
+        setTimeout(() => mask.remove(), 160);
+      }
+      function onKey(e) { if (e.key === 'Escape') close(); }
+      mask.addEventListener('click', e => { if (e.target === mask) close(); });
+      mask.querySelector('[data-act="close"]').onclick = close;
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(mask);
+      requestAnimationFrame(() => mask.classList.add('show'));
+      return mask;
+    }
+
+    // 把知识详情数据填进弹窗。读取详情复用 /api/knowledge/{file} 接口,这里只做只读展示。
+    function wikiModalFill(mask, d, err) {
+      const titleEl = mask.querySelector('[data-role="title"]');
+      const bodyEl = mask.querySelector('[data-role="body"]');
+      if (err || !d) {
+        titleEl.textContent = '加载失败';
+        bodyEl.innerHTML = '<div class="result-block warn">' + escapeHtml(err || '无法加载知识详情') + '</div>';
+        return;
+      }
+      titleEl.textContent = d.title || d.file || '知识详情';
+      const chips = [];
+      if (d.category) chips.push('<span class="wiki-chip">' + escapeHtml(d.category) + '</span>');
+      if (d.status) chips.push('<span class="wiki-chip ' + (d.status === 'verified' ? 'ok' : '') + '">' + escapeHtml(d.status) + '</span>');
+      if (d.confidence && d.confidence !== 'unknown') chips.push('<span class="wiki-chip">置信度 ' + escapeHtml(d.confidence) + '</span>');
+      if (d.updated) chips.push('<span class="wiki-chip mono">' + iconClock() + escapeHtml(fmtTime(d.updated)) + '</span>');
+
+      const sec = (label, content, opts) => {
+        const o = opts || {};
+        if (!content || (Array.isArray(content) && !content.length)) return '';
+        let inner;
+        if (o.list) {
+          inner = '<div class="wiki-tags">' + content.filter(Boolean).map(v => '<span class="wiki-tag mono">' + escapeHtml(v) + '</span>').join('') + '</div>';
+        } else if (o.mono) {
+          inner = '<pre class="wiki-pre">' + escapeHtml(content) + '</pre>';
+        } else {
+          inner = '<div class="wiki-text">' + escapeHtml(content) + '</div>';
+        }
+        return '<div class="wiki-sec"><div class="wiki-sec-label">' + escapeHtml(label) + '</div>' + inner + '</div>';
+      };
+
+      bodyEl.innerHTML =
+        (chips.length ? '<div class="wiki-chips">' + chips.join('') + '</div>' : '') +
+        (d.description ? '<div class="wiki-desc">' + escapeHtml(d.description) + '</div>' : '') +
+        sec('SIGNATURES（检索锚点）', d.signatures, { list: true }) +
+        sec('COMPONENTS', d.components, { list: true }) +
+        sec('问题背景', d.background) +
+        sec('定位过程', d.diagnosis) +
+        sec('解决方案', d.solution) +
+        sec('文件', d.file, { mono: true });
+    }
+
     function srcBadge(source, mode) {
       if (source === 'wiki') {
         const label = mode === 'exact' ? '来源 wiki · 精确命中' : '来源 wiki · 关联命中';
@@ -260,10 +349,7 @@
       if (m.role === 'user') {
         return '<div class="chat-row user"><div class="chat-bubble user">' + escapeHtml(m.content) + '</div></div>';
       }
-      const refs = (m.refs || []).filter(Boolean);
-      const refsHtml = refs.length
-        ? '<div class="chat-refs">' + refs.map(rf => '<span class="chat-ref mono" title="' + escapeHtml(rf.file) + '">' + iconFile() + escapeHtml(rf.title || rf.file) + '</span>').join('') + '</div>'
-        : '';
+      const refsHtml = chatRefsHtml(m.refs);
       const fbUp = m.feedback_rating === 'up' ? ' on' : '';
       const fbDown = m.feedback_rating === 'down' ? ' on down' : '';
       const isLocal = String(m.id || '').startsWith('local-');
@@ -358,6 +444,7 @@
       });
       root.querySelectorAll('[data-copy]').forEach(el => el.onclick = () => copyMessage(decodeURIComponent(el.dataset.copy)));
       root.querySelectorAll('[data-fb]').forEach(el => el.onclick = () => chatFeedback(el.dataset.mid, el.dataset.fb));
+      root.querySelectorAll('[data-wiki-file]').forEach(el => el.onclick = () => openWikiDetail(el.dataset.wikiFile));
     }
 
     function autoGrow(ta) {

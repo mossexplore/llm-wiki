@@ -559,9 +559,30 @@
     .chat-md .md-quote { border-left: 3px solid var(--accent-line); padding: 2px 0 2px 10px; margin: 6px 0; color: var(--text-mute); font-size: 12px; }
     .chat-md code { background: var(--surface-3); border: 1px solid var(--line-faint); border-radius: 5px; padding: 1px 5px; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; }
     .chat-md strong { font-weight: 700; }
-    .chat-refs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-    .chat-ref { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-mute); background: var(--surface-3); border: 1px solid var(--line-faint); border-radius: 6px; padding: 3px 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-refs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+    .chat-refs-label { font-size: 11px; color: var(--text-mute); }
+    .chat-ref { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--accent-deep); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 6px; padding: 3px 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; transition: .14s; }
+    .chat-ref:hover { background: var(--accent); color: var(--on-accent); border-color: transparent; }
     .chat-ref svg { width: 12px; height: 12px; flex: none; }
+
+    /* 知识详情弹窗(只读,点击 wiki 来源时弹出) */
+    .modal-box.wiki-modal { width: min(640px, 100%); max-height: 82vh; padding: 0; display: flex; flex-direction: column; }
+    .wiki-modal-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+    .wiki-modal-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.4; }
+    .wiki-modal-close { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--text-faint); font-size: 14px; }
+    .wiki-modal-close:hover { color: var(--text); background: var(--surface-3); }
+    .wiki-modal-body { padding: 18px 20px 22px; overflow: auto; }
+    .wiki-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+    .wiki-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-dim); background: var(--surface-3); border: 1px solid var(--line-faint); border-radius: 999px; padding: 3px 9px; }
+    .wiki-chip.ok { color: var(--success); background: var(--success-soft, rgba(34,160,90,0.12)); border-color: transparent; }
+    .wiki-desc { font-size: 13px; color: var(--text-dim); line-height: 1.65; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line-faint); }
+    .wiki-sec { margin-bottom: 16px; }
+    .wiki-sec:last-child { margin-bottom: 0; }
+    .wiki-sec-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-mute); margin-bottom: 7px; }
+    .wiki-text { font-size: 13px; color: var(--text); line-height: 1.72; white-space: pre-wrap; word-break: break-word; }
+    .wiki-pre { font-family: var(--mono); font-size: 12px; color: var(--text-dim); background: var(--surface-inset); border: 1px solid var(--line-faint); border-radius: var(--r-sm); padding: 8px 10px; margin: 0; white-space: pre-wrap; word-break: break-all; }
+    .wiki-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .wiki-tag { font-size: 12px; color: var(--text); background: var(--surface-inset); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 4px 9px; word-break: break-all; }
     .chat-acts { display: flex; align-items: center; gap: 4px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line-faint); }
     .chat-act { width: 28px; height: 26px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--text-faint); transition: .14s; }
     .chat-act:hover { color: var(--text-dim); background: var(--surface-3); }
