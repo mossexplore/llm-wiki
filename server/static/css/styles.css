@@ -550,12 +550,14 @@
     .chat-bubble { max-width: 76%; padding: 12px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.7; }
     .chat-bubble.user { background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 5px; white-space: pre-wrap; word-break: break-word; }
     .chat-bubble.agent { background: var(--surface-inset); border: 1px solid var(--line-faint); color: var(--text); border-bottom-left-radius: 5px; min-width: 0; }
-    .chat-srcline { margin-bottom: 7px; }
+    .chat-srcline { margin-bottom: 7px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .src-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; }
     .src-badge svg { width: 13px; height: 13px; }
     .src-badge.wiki { background: var(--success-soft, rgba(34,160,90,0.12)); color: var(--success, #1f9d57); }
     .src-badge.llm { background: var(--accent-soft); color: var(--accent-bright); }
     .src-badge.muted { background: var(--surface-3); color: var(--text-mute); }
+    .chat-latency { display: inline-flex; align-items: center; gap: 5px; color: var(--text-mute); font-size: 10.5px; }
+    .chat-latency .lat-dot { color: var(--text-faint); }
     .chat-md { white-space: normal; word-break: break-word; }
     .chat-md > :first-child { margin-top: 0; }
     .chat-md > :last-child { margin-bottom: 0; }

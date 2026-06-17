@@ -659,36 +659,72 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
     def gen():
         acc = ""
         source, mode, refs = "llm", "none", []
+        retrieval_ms = 0
+        first_delta_ms = None
         try:
+            yield _ndjson({
+                "type": "status", "request_id": request_id, "stage": "retrieving",
+                "elapsed_ms": int((time.perf_counter() - started) * 1000),
+            })
+            retrieve_started = time.perf_counter()
             decision = agent.retrieve(text)
+            retrieval_ms = decision.get("elapsed_ms", int((time.perf_counter() - retrieve_started) * 1000))
             source = decision["source"]
             mode = decision["mode"]
             refs = decision["refs"]
+            logger.info(
+                "chat.send.retrieved session_id=%s request_id=%s source=%s mode=%s refs=%s retrieval_ms=%s elapsed_ms=%s",
+                session_id, request_id, source, mode, len(refs), retrieval_ms,
+                int((time.perf_counter() - started) * 1000),
+            )
             yield _ndjson({
                 "type": "meta", "request_id": request_id, "session_id": session_id,
                 "source": source, "mode": mode, "refs": refs,
-                "retrieval_ms": decision.get("elapsed_ms", 0),
+                "retrieval_ms": retrieval_ms,
             })
             if source == "wiki":
                 # 命中知识库:检索资料 + 自定义提示词 → 大模型流式生成(RAG)
                 stream = agent.stream_wiki_answer(text, history, decision)
             else:
                 stream = agent.stream_llm_answer(text, history)
+            yield _ndjson({
+                "type": "status", "request_id": request_id, "stage": "generating",
+                "source": source, "mode": mode, "retrieval_ms": retrieval_ms,
+                "elapsed_ms": int((time.perf_counter() - started) * 1000),
+            })
+            logger.info(
+                "chat.send.model_stream.start session_id=%s request_id=%s source=%s mode=%s retrieval_ms=%s elapsed_ms=%s",
+                session_id, request_id, source, mode, retrieval_ms,
+                int((time.perf_counter() - started) * 1000),
+            )
             for delta in stream:
+                if first_delta_ms is None:
+                    first_delta_ms = int((time.perf_counter() - started) * 1000)
+                    yield _ndjson({
+                        "type": "status", "request_id": request_id, "stage": "first_delta",
+                        "source": source, "mode": mode, "retrieval_ms": retrieval_ms,
+                        "first_delta_ms": first_delta_ms,
+                        "elapsed_ms": first_delta_ms,
+                    })
+                    logger.info(
+                        "chat.send.first_delta session_id=%s request_id=%s source=%s mode=%s retrieval_ms=%s first_delta_ms=%s",
+                        session_id, request_id, source, mode, retrieval_ms, first_delta_ms,
+                    )
                 acc += delta
                 yield _ndjson({"type": "delta", "request_id": request_id, "text": delta})
             saved = chat_store.add_message(
                 session_id, "assistant", acc,
                 answer_source=source, retrieval_mode=mode, refs=refs,
-                elapsed_ms=decision.get("elapsed_ms", 0),
+                elapsed_ms=retrieval_ms,
             )
             yield _ndjson({
                 "type": "done", "request_id": request_id, "message_id": saved["id"],
                 "source": source, "mode": mode, "refs": refs,
+                "retrieval_ms": retrieval_ms, "first_delta_ms": first_delta_ms,
             })
             logger.info(
-                "chat.send.done session_id=%s request_id=%s source=%s mode=%s chars=%s elapsed_ms=%s",
-                session_id, request_id, source, mode, len(acc),
+                "chat.send.done session_id=%s request_id=%s source=%s mode=%s chars=%s retrieval_ms=%s first_delta_ms=%s elapsed_ms=%s",
+                session_id, request_id, source, mode, len(acc), retrieval_ms, first_delta_ms,
                 int((time.perf_counter() - started) * 1000),
             )
         except Exception as e:

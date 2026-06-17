@@ -55,7 +55,8 @@
       chatInput: '',
       chatStreaming: false,
       chatStreamText: '',           // 流式生成中的临时文本
-      chatStreamMeta: null          // 流式生成中的来源信息 {source,mode,refs}
+      chatStreamMeta: null,         // 流式生成中的来源信息 {source,mode,refs}
+      chatStreamStatus: null        // 流式状态与时延 {stage,retrieval_ms,first_delta_ms,elapsed_ms}
     };
 
     const root = document.getElementById('root');

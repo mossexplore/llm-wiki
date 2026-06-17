@@ -2,6 +2,8 @@
     // 左侧会话列表 + 右侧聊天区(参考 NextChat)。回答先检索 wiki,命中则流式回 wiki
     // 答案并标注来源;否则流式调用大模型。所有会话/消息/反馈都落库(见后端)。
 
+    let chatLatencyTimer = null;
+
     function iconChat() { return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'; }
     function iconSend() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4 20-7z"></path></svg>'; }
     function iconCopy() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'; }
@@ -98,6 +100,7 @@
 
     async function newChatSession() {
       try {
+        stopChatLatencyTimer();
         const r = await fetch('/api/chat/sessions', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: '新会话' })
@@ -110,6 +113,7 @@
         state.chatMessages = [];
         state.chatStreamText = '';
         state.chatStreamMeta = null;
+        state.chatStreamStatus = null;
         render();
         const ta = document.getElementById('chatInput');
         if (ta) ta.focus();
@@ -118,10 +122,12 @@
 
     async function selectChatSession(id) {
       if (!id) return;
+      stopChatLatencyTimer();
       state.chatActive = id;
       state.chatMessagesLoading = true;
       state.chatStreamText = '';
       state.chatStreamMeta = null;
+      state.chatStreamStatus = null;
       render();
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id) + '/messages');
@@ -169,11 +175,13 @@
         if (!state.chatActive) return;
       }
       const sessionId = state.chatActive;
+      stopChatLatencyTimer();
       state.chatMessages.push({ role: 'user', content: text, id: 'local-' + Date.now() });
       state.chatInput = '';
       state.chatStreaming = true;
       state.chatStreamText = '';
       state.chatStreamMeta = null;
+      state.chatStreamStatus = { stage: 'retrieving', elapsed_ms: 0 };
       render();
 
       try {
@@ -186,6 +194,7 @@
         await consumeChatStream(r);
       } catch (e) {
         state.chatStreaming = false;
+        stopChatLatencyTimer();
         render();
         showToast(String(e && e.message || e));
       }
@@ -211,7 +220,17 @@
           let ev;
           try { ev = JSON.parse(line); } catch (_) { continue; }
           if (ev.type === 'meta') {
-            state.chatStreamMeta = { source: ev.source, mode: ev.mode, refs: ev.refs || [] };
+            state.chatStreamMeta = { source: ev.source, mode: ev.mode, refs: ev.refs || [], retrieval_ms: ev.retrieval_ms };
+            state.chatStreamStatus = Object.assign({}, state.chatStreamStatus || {}, {
+              stage: 'retrieved',
+              retrieval_ms: ev.retrieval_ms,
+              elapsed_ms: ev.retrieval_ms
+            });
+            render();
+          } else if (ev.type === 'status') {
+            state.chatStreamStatus = Object.assign({}, state.chatStreamStatus || {}, ev);
+            if (ev.stage === 'generating') startChatLatencyTimer();
+            if (ev.stage === 'first_delta') stopChatLatencyTimer();
             render();
           } else if (ev.type === 'delta') {
             state.chatStreamText += ev.text || '';
@@ -224,6 +243,7 @@
         }
       }
       state.chatStreaming = false;
+      stopChatLatencyTimer();
       if (errored) {
         showToast('生成出错:' + errored);
         // 仍把已生成内容作为一条回复展示
@@ -240,7 +260,37 @@
       }
       state.chatStreamText = '';
       state.chatStreamMeta = null;
+      state.chatStreamStatus = null;
       render();
+    }
+
+    function startChatLatencyTimer() {
+      stopChatLatencyTimer();
+      const startedAt = Date.now();
+      state.chatStreamStatus = Object.assign({}, state.chatStreamStatus || {}, { wait_started_at: startedAt });
+      chatLatencyTimer = setInterval(() => {
+        const st = state.chatStreamStatus || {};
+        if (!state.chatStreaming || st.stage !== 'generating' || st.first_delta_ms) {
+          stopChatLatencyTimer();
+          return;
+        }
+        state.chatStreamStatus = Object.assign({}, st, {
+          wait_ms: Date.now() - (st.wait_started_at || startedAt)
+        });
+        updateLatencyDOM();
+      }, 1000);
+    }
+
+    function stopChatLatencyTimer() {
+      if (chatLatencyTimer) {
+        clearInterval(chatLatencyTimer);
+        chatLatencyTimer = null;
+      }
+    }
+
+    function updateLatencyDOM() {
+      const el = document.getElementById('chatLatency');
+      if (el) el.outerHTML = chatLatencyHtml();
     }
 
     // 流式期间只更新生成中气泡的 DOM,避免整页重渲染丢失滚动/输入焦点
@@ -303,6 +353,28 @@
       return '<div class="chat-refs"><span class="chat-refs-label">来源 wiki:</span>' +
         list.map(rf => '<button class="chat-ref mono" type="button" data-wiki-file="' + escapeHtml(rf.file) + '" title="点击查看知识详情:' + escapeHtml(rf.file) + '">' + iconFile() + escapeHtml(rf.title || rf.file) + '</button>').join('') +
         '</div>';
+    }
+
+    function fmtMs(ms) {
+      return typeof ms === 'number' && isFinite(ms) ? (ms / 1000).toFixed(ms >= 10000 ? 1 : 2) + 's' : '—';
+    }
+
+    function chatLatencyHtml() {
+      const st = state.chatStreamStatus || {};
+      const labels = {
+        retrieving: '检索中',
+        retrieved: '检索完成',
+        generating: '请求模型',
+        first_delta: '生成中'
+      };
+      const bits = ['<span>' + escapeHtml(labels[st.stage] || '处理中') + '</span>'];
+      if (typeof st.retrieval_ms === 'number') bits.push('<span>检索 ' + fmtMs(st.retrieval_ms) + '</span>');
+      if (typeof st.first_delta_ms === 'number') bits.push('<span>首字 ' + fmtMs(st.first_delta_ms) + '</span>');
+      else if (st.stage === 'generating') {
+        const wait = typeof st.wait_ms === 'number' ? st.wait_ms : st.elapsed_ms;
+        bits.push('<span>已等 ' + fmtMs(wait) + '</span>');
+      }
+      return '<span class="chat-latency mono" id="chatLatency">' + bits.join('<span class="lat-dot">·</span>') + '</span>';
     }
 
     async function openWikiDetail(file) {
@@ -442,7 +514,10 @@
         const msgs = state.chatMessages.map(renderChatMessage).join('');
         const streaming = state.chatStreaming
           ? '<div class="chat-row agent"><div class="chat-avatar">' + iconChat() + '</div><div class="chat-bubble agent">' +
-              '<div class="chat-srcline">' + (state.chatStreamMeta ? srcBadge(state.chatStreamMeta.source, state.chatStreamMeta.mode) : '<span class="src-badge muted">' + iconSpin() + '检索中…</span>') + '</div>' +
+              '<div class="chat-srcline">' +
+                (state.chatStreamMeta ? srcBadge(state.chatStreamMeta.source, state.chatStreamMeta.mode) : '<span class="src-badge muted">' + iconSpin() + '检索中…</span>') +
+                chatLatencyHtml() +
+              '</div>' +
               '<div class="chat-md" id="chatStreamBody">' + (state.chatStreamText ? renderMarkdown(state.chatStreamText) + '<span class="caret"></span>' : '<span class="caret"></span>') + '</div>' +
             '</div></div>'
           : '';
