@@ -25,6 +25,8 @@ import ingest                                # noqa: E402
 import graph                                 # noqa: E402
 import query                                 # noqa: E402
 import search_index                          # noqa: E402  检索索引(SQLite+FTS5)同步
+import agent                                 # noqa: E402  对话 Agent:先检索后大模型兜底
+import chat_store                            # noqa: E402  对话运营数据持久化(SQLite)
 import yaml                                  # noqa: E402
 
 from fastapi import FastAPI, Header, HTTPException            # noqa: E402
@@ -581,6 +583,143 @@ def kb_stats():
 @app.get("/api/graph")
 def knowledge_graph():
     return graph.build_graph()
+
+
+# ---------------- 5) 对话 Agent ----------------
+class SessionCreateReq(BaseModel):
+    title: Optional[str] = None
+
+
+class ChatMessageReq(BaseModel):
+    content: str
+
+
+class FeedbackReq(BaseModel):
+    rating: str                  # 'up' | 'down'
+    reason: Optional[str] = None
+
+
+def _session_title(text: str) -> str:
+    """用首条提问生成会话标题:取首行前 20 字。"""
+    line = (text or "").strip().splitlines()[0] if (text or "").strip() else "新会话"
+    line = line.strip() or "新会话"
+    return line[:20] + ("…" if len(line) > 20 else "")
+
+
+@app.post("/api/chat/sessions")
+def chat_create_session(req: SessionCreateReq):
+    return chat_store.create_session(req.title or "新会话")
+
+
+@app.get("/api/chat/sessions")
+def chat_list_sessions():
+    return {"items": chat_store.list_sessions()}
+
+
+@app.get("/api/chat/sessions/{session_id}/messages")
+def chat_get_messages(session_id: str):
+    if not chat_store.session_exists(session_id):
+        raise HTTPException(404, "会话不存在")
+    return {"items": chat_store.get_messages(session_id)}
+
+
+@app.delete("/api/chat/sessions/{session_id}")
+def chat_delete_session(session_id: str):
+    ok = chat_store.delete_session(session_id)
+    if not ok:
+        raise HTTPException(404, "会话不存在")
+    return {"ok": True}
+
+
+@app.post("/api/chat/sessions/{session_id}/messages")
+def chat_send_message(session_id: str, req: ChatMessageReq):
+    """对话主流程:存用户消息 → 检索 → wiki 命中则流式回 wiki 答案,否则流式回大模型答案
+    → 存 Agent 回复。以 NDJSON 流式返回 meta/delta/done 事件。"""
+    text = (req.content or "").strip()
+    if not text:
+        raise HTTPException(400, "内容为空")
+    if not chat_store.session_exists(session_id):
+        raise HTTPException(404, "会话不存在")
+
+    # 既往历史(给大模型多轮上下文用),需在追加本条用户消息之前取
+    history = [{"role": m["role"], "content": m["content"]}
+               for m in chat_store.get_messages(session_id)]
+    chat_store.add_message(session_id, "user", text)
+    # 首条提问时,用它自动命名会话
+    if not history:
+        try:
+            chat_store.rename_session(session_id, _session_title(text))
+        except Exception:
+            logger.exception("chat rename_session failed session_id=%s", session_id)
+
+    request_id = uuid.uuid4().hex[:12]
+    started = time.perf_counter()
+    logger.info("chat.send.start session_id=%s request_id=%s len=%s", session_id, request_id, len(text))
+
+    def gen():
+        acc = ""
+        try:
+            decision = agent.retrieve(text)
+            source = decision["source"]
+            mode = decision["mode"]
+            refs = decision["refs"]
+            yield _ndjson({
+                "type": "meta", "request_id": request_id, "session_id": session_id,
+                "source": source, "mode": mode, "refs": refs,
+                "retrieval_ms": decision.get("elapsed_ms", 0),
+            })
+            if source == "wiki":
+                stream = agent.stream_wiki_answer(decision)
+            else:
+                stream = agent.stream_llm_answer(text, history)
+            for delta in stream:
+                acc += delta
+                yield _ndjson({"type": "delta", "request_id": request_id, "text": delta})
+            saved = chat_store.add_message(
+                session_id, "assistant", acc,
+                answer_source=source, retrieval_mode=mode, refs=refs,
+                elapsed_ms=decision.get("elapsed_ms", 0),
+            )
+            yield _ndjson({
+                "type": "done", "request_id": request_id, "message_id": saved["id"],
+                "source": source, "mode": mode, "refs": refs,
+            })
+            logger.info(
+                "chat.send.done session_id=%s request_id=%s source=%s mode=%s chars=%s elapsed_ms=%s",
+                session_id, request_id, source, mode, len(acc),
+                int((time.perf_counter() - started) * 1000),
+            )
+        except Exception as e:
+            logger.exception("chat.send.error session_id=%s request_id=%s", session_id, request_id)
+            # 已生成的部分仍尽量落库,便于运营回溯
+            if acc.strip():
+                try:
+                    chat_store.add_message(session_id, "assistant", acc,
+                                           answer_source="llm", retrieval_mode="none", refs=[])
+                except Exception:
+                    logger.exception("chat persist partial answer failed")
+            yield _ndjson({"type": "error", "request_id": request_id, "error": str(e)})
+
+    return StreamingResponse(
+        gen(),
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={"X-Request-ID": request_id, "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/chat/messages/{message_id}/feedback")
+def chat_feedback(message_id: str, req: FeedbackReq):
+    if req.rating not in ("up", "down"):
+        raise HTTPException(400, "rating 必须为 up 或 down")
+    msg = chat_store.message_exists(message_id)
+    if not msg:
+        raise HTTPException(404, "消息不存在")
+    if msg["role"] != "assistant":
+        raise HTTPException(400, "只能对 Agent 回复反馈")
+    reason = (req.reason or "").strip() or None
+    if req.rating == "down" and not reason:
+        raise HTTPException(400, "点踩请填写原因")
+    return chat_store.set_feedback(message_id, msg["session_id"], req.rating, reason)
 
 
 # ---------------- 静态前端 ----------------

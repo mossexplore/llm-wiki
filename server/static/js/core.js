@@ -46,7 +46,16 @@
       graphRenderQueued: false,
       graphSuppressClick: false,
       stats: null,
-      sample: { raw: SAMPLE_RAW_FALLBACK, case: SAMPLE_CASE_FALLBACK }
+      sample: { raw: SAMPLE_RAW_FALLBACK, case: SAMPLE_CASE_FALLBACK },
+      chatSessions: [],
+      chatSessionsLoading: false,
+      chatActive: '',               // 当前选中的会话 id
+      chatMessages: [],
+      chatMessagesLoading: false,
+      chatInput: '',
+      chatStreaming: false,
+      chatStreamText: '',           // 流式生成中的临时文本
+      chatStreamMeta: null          // 流式生成中的来源信息 {source,mode,refs}
     };
 
     const root = document.getElementById('root');
@@ -55,6 +64,7 @@
     const tabList = document.getElementById('tab-list');
     const tabQuery = document.getElementById('tab-query');
     const tabGraph = document.getElementById('tab-graph');
+    const tabChat = document.getElementById('tab-chat');
 
     function iconBook() { return '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path></svg>'; }
     function iconCheck() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>'; }
@@ -141,6 +151,54 @@
       });
     }
 
+    // \u5e26\u6587\u672c\u8f93\u5165\u7684\u5f39\u7a97(\u70b9\u8e29\u539f\u56e0\u7528);\u8fd4\u56de Promise<string|null>,\u53d6\u6d88\u4e3a null
+    function promptModal(opts) {
+      const o = opts || {};
+      const title = o.title || '\u8bf7\u8f93\u5165';
+      const message = o.message || '';
+      const placeholder = o.placeholder || '';
+      const confirmText = o.confirmText || '\u63d0\u4ea4';
+      const cancelText = o.cancelText || '\u53d6\u6d88';
+      const required = !!o.required;
+      return new Promise(resolve => {
+        const mask = document.createElement('div');
+        mask.className = 'modal-mask';
+        mask.innerHTML =
+          '<div class="modal-box" role="dialog" aria-modal="true">' +
+            '<div class="modal-head"><div class="modal-title">' + escapeHtml(title) + '</div></div>' +
+            (message ? '<div class="modal-msg">' + escapeHtml(message) + '</div>' : '') +
+            '<textarea class="field mono" data-act="input" placeholder="' + escapeHtml(placeholder) + '" style="height:88px;margin-top:4px"></textarea>' +
+            '<div class="modal-actions">' +
+              '<button class="btn" data-act="cancel">' + escapeHtml(cancelText) + '</button>' +
+              '<button class="btn primary" data-act="ok">' + escapeHtml(confirmText) + '</button>' +
+            '</div>' +
+          '</div>';
+        const input = mask.querySelector('[data-act="input"]');
+        function close(v) {
+          mask.classList.remove('show');
+          document.removeEventListener('keydown', onKey);
+          setTimeout(() => mask.remove(), 160);
+          resolve(v);
+        }
+        function submit() {
+          const v = input.value.trim();
+          if (required && !v) { input.focus(); showToast('\u8bf7\u586b\u5199\u539f\u56e0'); return; }
+          close(v);
+        }
+        function onKey(e) {
+          if (e.key === 'Escape') close(null);
+          else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit();
+        }
+        mask.addEventListener('click', e => { if (e.target === mask) close(null); });
+        mask.querySelector('[data-act="cancel"]').onclick = () => close(null);
+        mask.querySelector('[data-act="ok"]').onclick = submit;
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(mask);
+        requestAnimationFrame(() => mask.classList.add('show'));
+        input.focus();
+      });
+    }
+
     function slug(s) {
       return (s || 'case').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'case';
     }
@@ -205,7 +263,9 @@
       tabList.classList.toggle('on', mode === 'list');
       tabQuery.classList.toggle('on', mode === 'query');
       tabGraph.classList.toggle('on', mode === 'graph');
+      tabChat.classList.toggle('on', mode === 'chat');
       if (mode === 'graph' && !state.graph && !state.graphLoading) loadGraph();
+      if (mode === 'chat' && !state.chatSessions.length && !state.chatSessionsLoading) loadChatSessions();
       // 进入列表页:首次为空、或刚入库过(dirty)都自动刷新,无需手点「刷新」
       if (mode === 'list' && !state.knowledgeLoading &&
           (!state.knowledgeItems.length || state.knowledgeDirty)) {
@@ -390,6 +450,8 @@
       tabList.onclick = () => setMode('list');
       tabQuery.onclick = () => setMode('query');
       tabGraph.onclick = () => setMode('graph');
+      tabChat.onclick = () => setMode('chat');
+      if (state.mode === 'chat' && typeof bindChatEvents === 'function') bindChatEvents();
       root.querySelectorAll('.step.click').forEach(el => el.onclick = () => setStep(Number(el.dataset.step)));
 
       const rawInput = document.getElementById('rawInput');
@@ -453,10 +515,14 @@
     }
 
     function render() {
-      const main = state.mode === 'ingest'
-        ? renderIngestMain()
-        : (state.mode === 'list' ? renderKnowledgeMain() : (state.mode === 'query' ? renderQueryMain() : renderGraphMain()));
-      root.innerHTML = state.mode === 'list'
+      let main;
+      if (state.mode === 'ingest') main = renderIngestMain();
+      else if (state.mode === 'list') main = renderKnowledgeMain();
+      else if (state.mode === 'query') main = renderQueryMain();
+      else if (state.mode === 'chat') main = renderChatMain();
+      else main = renderGraphMain();
+      // list / chat 是全宽双栏布局,不带左侧 rail
+      root.innerHTML = (state.mode === 'list' || state.mode === 'chat')
         ? `<div class="main">${main}</div>`
         : `
           <div class="grid">
@@ -464,4 +530,5 @@
             <div class="main">${main}</div>
           </div>`;
       bindEvents();
+      if (state.mode === 'chat' && typeof afterChatRender === 'function') afterChatRender();
     }
