@@ -140,8 +140,8 @@ def _context_block(context: list, related: bool) -> str:
 
 
 def _stream_chat(messages):
-    """统一的大模型流式调用:逐段 yield 文本增量。"""
-    client, model = ingest._client_and_model()
+    """统一的大模型流式调用:逐段 yield 文本增量。对话用 config.yaml 的 chat 段(可与写入不同)。"""
+    client, model = ingest._client_and_model("chat")
     stream = client.chat.completions.create(
         model=model,
         temperature=0.3,

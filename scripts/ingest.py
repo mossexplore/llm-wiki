@@ -44,8 +44,7 @@ EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原
 
 
 CONFIG_PATH = pathlib.Path(os.environ.get("INGEST_CONFIG", ROOT / "config.yaml"))
-_client = None
-_model = None
+_clients: dict = {}    # section -> (OpenAI client, model);按配置段缓存,支持差异化模型
 
 
 def _description(c: dict) -> str:
@@ -77,8 +76,12 @@ def _tags(c: dict) -> list:
     return out
 
 
-def load_config() -> dict:
-    """读取本地 config.yaml 的 openai 段:api_key / base_url / model。
+def load_config(section: str = "openai") -> dict:
+    """读取本地 config.yaml 的某个配置段:api_key / base_url / model。
+
+    差异化配置:写入知识(抽取)默认用 `openai` 段,对话用 `chat` 段。非 openai 段以
+    `openai` 为基底,再用本段的非空字段覆盖 —— 这样只需在 `chat` 里写要改的项
+    (如只换 model),其余自动继承 openai;`chat` 段缺省时则完全等同 openai(向后兼容)。
 
     缺失时抛 RuntimeError(普通异常,便于 Web 端 except Exception 捕获并流式回传);
     CLI 侧在 main() 里把它转成友好退出。
@@ -89,25 +92,28 @@ def load_config() -> dict:
     env = data.get("env", "dev")
     if env == "dev":
         os.environ["NO_PROXY"] = "127.0.0.1"
-    cfg = data.get("openai", {})
+    cfg = dict(data.get("openai") or {})
+    if section != "openai":
+        override = data.get(section) or {}
+        cfg.update({k: v for k, v in override.items() if v not in (None, "")})
     if not cfg.get("api_key"):
-        raise RuntimeError(f"配置文件 {CONFIG_PATH} 缺少 openai.api_key。")
+        raise RuntimeError(f"配置文件 {CONFIG_PATH} 缺少 {section}.api_key(或 openai.api_key)。")
     logger.info(
-        "ingest.config.loaded env=%s config_path=%s base_url=%s model=%s no_proxy=%s",
-        env, CONFIG_PATH, cfg.get("base_url") or "<default>",
+        "ingest.config.loaded section=%s env=%s config_path=%s base_url=%s model=%s no_proxy=%s",
+        section, env, CONFIG_PATH, cfg.get("base_url") or "<default>",
         cfg.get("model", "gpt-4o"), os.environ.get("NO_PROXY", ""),
     )
     return cfg
 
 
-def _client_and_model():
-    """懒加载 OpenAI 客户端;URL/模型/密钥全部来自本地 config.yaml(见 load_config)。"""
-    global _client, _model
-    if _client is None:
-        cfg = load_config()
-        _model = cfg.get("model", "gpt-4o")
-        _client = OpenAI(api_key=cfg["api_key"], base_url=cfg.get("base_url") or None)
-    return _client, _model
+def _client_and_model(section: str = "openai"):
+    """懒加载 OpenAI 客户端;按配置段缓存。section=openai 写入用,chat 对话用。"""
+    if section not in _clients:
+        cfg = load_config(section)
+        model = cfg.get("model", "gpt-4o")
+        client = OpenAI(api_key=cfg["api_key"], base_url=cfg.get("base_url") or None)
+        _clients[section] = (client, model)
+    return _clients[section]
 
 
 def call_llm(prompt: str) -> str:
