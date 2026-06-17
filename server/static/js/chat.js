@@ -8,9 +8,11 @@
     function iconUp() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path></svg>'; }
     function iconDown() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path></svg>'; }
 
-    // 行内格式:**粗体** / *斜体* / `行内代码`(已在外层做过 HTML 转义)
+    // 行内格式:[链接](url) / **粗体** / *斜体* / `行内代码`(已在外层做过 HTML 转义)
     function mdInline(s) {
       return s
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)/g,
+          '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
         .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
         .replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -44,7 +46,10 @@
         }
 
         let m;
-        if ((m = line.match(/^\s*(#{1,6})\s+(.*)$/))) {            // 标题
+        if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) {           // 分割线 --- *** ___
+          flushBlocks();
+          out.push('<hr class="md-hr">');
+        } else if ((m = line.match(/^\s*(#{1,6})\s+(.*)$/))) {     // 标题
           flushBlocks();
           out.push('<div class="md-h">' + mdInline(m[2]) + '</div>');
         } else if (/^\s*&gt;\s?/.test(line)) {                     // 引用

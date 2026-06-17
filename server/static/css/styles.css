@@ -569,6 +569,9 @@
     .chat-md .md-code code { background: none; border: none; padding: 0; border-radius: 0; font-size: 12px; line-height: 1.6; color: var(--text-dim); white-space: pre; }
     .chat-md strong { font-weight: 700; }
     .chat-md em { font-style: italic; }
+    .chat-md .md-hr { border: none; border-top: 1px solid var(--line); margin: 12px 0; }
+    .chat-md a { color: var(--accent-deep); text-decoration: underline; text-underline-offset: 2px; word-break: break-all; }
+    .chat-md a:hover { color: var(--accent-bright); }
     .chat-refs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
     .chat-refs-label { font-size: 11px; color: var(--text-mute); }
     .chat-ref { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--accent-deep); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 6px; padding: 3px 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; transition: .14s; }
