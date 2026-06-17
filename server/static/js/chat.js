@@ -8,22 +8,66 @@
     function iconUp() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path></svg>'; }
     function iconDown() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path></svg>'; }
 
-    // 极简 Markdown 渲染:先转义,再处理 ### 标题 / **粗体** / `代码` / > 引用 / 换行
+    // 行内格式:**粗体** / *斜体* / `行内代码`(已在外层做过 HTML 转义)
+    function mdInline(s) {
+      return s
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+    }
+
+    // 轻量 Markdown 渲染:支持围栏代码块 ``` / 标题 # ## ### / 引用 > / 有序无序列表 /
+    // 行内粗体斜体代码。先整体转义再逐行解析,流式期间未闭合的代码块也会按代码块展示。
     function renderMarkdown(text) {
-      let h = escapeHtml(text || '');
-      const lines = h.split('\n');
+      const lines = escapeHtml(text || '').split('\n');
       const out = [];
-      for (let raw of lines) {
-        if (/^###\s+/.test(raw)) out.push('<div class="md-h">' + raw.replace(/^###\s+/, '') + '</div>');
-        else if (/^&gt;\s?/.test(raw)) out.push('<div class="md-quote">' + raw.replace(/^&gt;\s?/, '') + '</div>');
-        else out.push(raw);
+      let listType = null;     // 'ul' | 'ol' | null
+      let para = [];           // 连续普通文本行缓冲
+      const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
+      const flushPara = () => { if (para.length) { out.push('<div class="md-p">' + para.join('<br>') + '</div>'); para = []; } };
+      const flushBlocks = () => { flushPara(); closeList(); };
+
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+
+        // 围栏代码块:```lang ... ```(流式未闭合时收集到结尾)
+        const fence = line.match(/^\s*```(.*)$/);
+        if (fence) {
+          flushBlocks();
+          const code = [];
+          i++;
+          while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) { code.push(lines[i]); i++; }
+          if (i < lines.length) i++;   // 跳过闭合的 ```
+          out.push('<pre class="md-code"><code>' + code.join('\n') + '</code></pre>');
+          continue;
+        }
+
+        let m;
+        if ((m = line.match(/^\s*(#{1,6})\s+(.*)$/))) {            // 标题
+          flushBlocks();
+          out.push('<div class="md-h">' + mdInline(m[2]) + '</div>');
+        } else if (/^\s*&gt;\s?/.test(line)) {                     // 引用
+          flushBlocks();
+          out.push('<div class="md-quote">' + mdInline(line.replace(/^\s*&gt;\s?/, '')) + '</div>');
+        } else if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) {        // 无序列表
+          flushPara();
+          if (listType !== 'ul') { closeList(); out.push('<ul class="md-list">'); listType = 'ul'; }
+          out.push('<li>' + mdInline(m[1]) + '</li>');
+        } else if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) {        // 有序列表
+          flushPara();
+          if (listType !== 'ol') { closeList(); out.push('<ol class="md-list">'); listType = 'ol'; }
+          out.push('<li>' + mdInline(m[1]) + '</li>');
+        } else if (/^\s*$/.test(line)) {                           // 空行 → 段落分隔
+          flushBlocks();
+        } else {                                                   // 普通文本行
+          closeList();
+          para.push(mdInline(line));
+        }
+        i++;
       }
-      h = out.join('\n');
-      h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
-      // 把不在块级元素内的普通换行转 <br>(块级元素自带换行)
-      h = h.replace(/\n/g, '<br>').replace(/<br>(<div class="md-)/g, '$1').replace(/(<\/div>)<br>/g, '$1');
-      return h;
+      flushBlocks();
+      return out.join('');
     }
 
     async function loadChatSessions(selectFirst = true) {
@@ -412,9 +456,13 @@
 
       return '<section class="chat-layout">' +
         '<aside class="card chat-side">' +
-          '<div class="card-head" style="padding:16px 16px 14px"><div><div class="kicker">CHAT · AGENT</div><h3 style="margin-top:2px">会话</h3></div>' +
-            '<button class="btn sm primary" id="chatNew" type="button" title="新建聊天">' + iconPlus() + '新建</button></div>' +
-          '<div class="card-pad" style="padding-top:0;flex:1;min-height:0;display:flex;flex-direction:column">' +
+          '<div class="card-head knowledge-head">' +
+            '<div style="min-width:0"><div class="kicker" style="overflow:hidden;text-overflow:ellipsis">CHAT · AGENT</div><h3>会话</h3></div>' +
+            '<div class="knowledge-actions">' +
+              '<button class="btn sm primary" id="chatNew" type="button" title="新建聊天">' + iconPlus() + '新建</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="card-pad">' +
             '<div class="chat-sess-list">' + sideList + '</div>' +
           '</div>' +
         '</aside>' +
