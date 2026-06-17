@@ -682,14 +682,20 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 "source": source, "mode": mode, "refs": refs,
                 "retrieval_ms": retrieval_ms,
             })
-            if source == "wiki":
-                # 命中知识库:检索资料 + 自定义提示词 → 大模型流式生成(RAG)
-                stream = agent.stream_wiki_answer(text, history, decision)
-            else:
-                stream = agent.stream_llm_answer(text, history)
+            messages = agent.build_answer_messages(text, history, decision)
+            prompt_stats = agent.message_stats(messages)
+            logger.info(
+                "chat.send.prompt session_id=%s request_id=%s message_count=%s char_count=%s history_messages=%s message_lengths=%s",
+                session_id, request_id, prompt_stats["message_count"], prompt_stats["char_count"],
+                prompt_stats["history_messages"], prompt_stats["message_lengths"],
+            )
+            stream = agent.stream_messages(messages)
             yield _ndjson({
                 "type": "status", "request_id": request_id, "stage": "generating",
                 "source": source, "mode": mode, "retrieval_ms": retrieval_ms,
+                "message_count": prompt_stats["message_count"],
+                "prompt_chars": prompt_stats["char_count"],
+                "history_messages": prompt_stats["history_messages"],
                 "elapsed_ms": int((time.perf_counter() - started) * 1000),
             })
             logger.info(

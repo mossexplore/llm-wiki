@@ -369,6 +369,9 @@
       };
       const bits = ['<span>' + escapeHtml(labels[st.stage] || '处理中') + '</span>'];
       if (typeof st.retrieval_ms === 'number') bits.push('<span>检索 ' + fmtMs(st.retrieval_ms) + '</span>');
+      if (typeof st.message_count === 'number' || typeof st.prompt_chars === 'number') {
+        bits.push('<span>上下文 ' + (st.message_count || '—') + '条/' + (st.prompt_chars || 0) + '字</span>');
+      }
       if (typeof st.first_delta_ms === 'number') bits.push('<span>首字 ' + fmtMs(st.first_delta_ms) + '</span>');
       else if (st.stage === 'generating') {
         const wait = typeof st.wait_ms === 'number' ? st.wait_ms : st.elapsed_ms;

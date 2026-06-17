@@ -139,18 +139,70 @@ def _context_block(context: list, related: bool) -> str:
     return "\n".join(blocks).strip()
 
 
-def _stream_chat(messages):
+def message_stats(messages: list[dict]) -> dict:
+    lengths = [{"role": m.get("role", ""), "chars": len(m.get("content") or "")} for m in messages]
+    return {
+        "message_count": len(messages),
+        "char_count": sum(item["chars"] for item in lengths),
+        "message_lengths": lengths,
+        "history_messages": max(0, len(messages) - 2),
+    }
+
+
+def build_answer_messages(text: str, history: list | None, decision: dict) -> list[dict]:
+    """构造本轮发给大模型的 messages,便于服务端在请求前统计实际上下文大小。"""
+    messages = [{"role": "system", "content": WIKI_PROMPT if decision.get("source") == "wiki" else CHAT_SYSTEM_PROMPT}]
+    messages.extend(_history_messages(history))
+    if decision.get("source") == "wiki":
+        context_text = _context_block(decision.get("context", []), related=(decision.get("mode") == "fuzzy"))
+        messages.append({"role": "user", "content": f"{context_text}\n\n【用户问题】\n{text}"})
+    else:
+        messages.append({"role": "user", "content": text})
+    return messages
+
+
+def stream_messages(messages):
     """统一的大模型流式调用:逐段 yield 文本增量。对话用 config.yaml 的 chat 段(可与写入不同)。"""
+    import time
     client, model = ingest._client_and_model("chat")
+    stats = message_stats(messages)
+    started = time.perf_counter()
+    logger.info(
+        "agent.chat.request model=%s message_count=%s char_count=%s history_messages=%s message_lengths=%s",
+        model, stats["message_count"], stats["char_count"], stats["history_messages"], stats["message_lengths"],
+    )
     stream = client.chat.completions.create(
         model=model,
         temperature=0.3,
         messages=messages,
         stream=True,
     )
+    logger.info(
+        "agent.chat.stream_created model=%s create_ms=%s",
+        model, int((time.perf_counter() - started) * 1000),
+    )
+    first_chunk_logged = False
+    first_content_logged = False
     for chunk in stream:
+        if not first_chunk_logged:
+            first_chunk_logged = True
+            logger.info(
+                "agent.chat.first_chunk model=%s first_chunk_ms=%s",
+                model, int((time.perf_counter() - started) * 1000),
+            )
         if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+            if not first_content_logged:
+                first_content_logged = True
+                logger.info(
+                    "agent.chat.first_content model=%s first_content_ms=%s",
+                    model, int((time.perf_counter() - started) * 1000),
+                )
             yield chunk.choices[0].delta.content
+
+
+def _stream_chat(messages):
+    """兼容旧调用名;新代码优先用 stream_messages(),这样语义更明确。"""
+    yield from stream_messages(messages)
 
 
 def _history_messages(history: list | None) -> list:
@@ -165,16 +217,9 @@ def _history_messages(history: list | None) -> list:
 
 def stream_wiki_answer(text: str, history: list | None, decision: dict):
     """命中知识库:把检索资料 + 自定义提示词喂给大模型,流式生成回答。"""
-    context_text = _context_block(decision.get("context", []), related=(decision.get("mode") == "fuzzy"))
-    messages = [{"role": "system", "content": WIKI_PROMPT}]
-    messages.extend(_history_messages(history))
-    messages.append({"role": "user", "content": f"{context_text}\n\n【用户问题】\n{text}"})
-    yield from _stream_chat(messages)
+    yield from stream_messages(build_answer_messages(text, history, decision))
 
 
 def stream_llm_answer(text: str, history: list | None = None):
     """未命中知识库:不带资料,直接让大模型基于通用经验流式回答。"""
-    messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
-    messages.extend(_history_messages(history))
-    messages.append({"role": "user", "content": text})
-    yield from _stream_chat(messages)
+    yield from stream_messages(build_answer_messages(text, history, {"source": "llm"}))
