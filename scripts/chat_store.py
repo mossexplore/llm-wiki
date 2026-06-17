@@ -89,6 +89,14 @@ def session_exists(session_id: str) -> bool:
         conn.close()
 
 
+def has_messages(session_id: str) -> bool:
+    conn = _connect()
+    try:
+        return conn.execute("SELECT 1 FROM chat_messages WHERE session_id=? LIMIT 1", (session_id,)).fetchone() is not None
+    finally:
+        conn.close()
+
+
 def rename_session(session_id: str, title: str) -> None:
     conn = _connect()
     try:

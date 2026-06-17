@@ -641,12 +641,11 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
     if not chat_store.session_exists(session_id):
         raise HTTPException(404, "会话不存在")
 
-    # 既往历史(给大模型多轮上下文用),需在追加本条用户消息之前取
-    history = [{"role": m["role"], "content": m["content"]}
-               for m in chat_store.get_messages(session_id)]
+    # 仅用于判断是否首条消息以便自动命名;模型请求不再携带历史消息。
+    has_history = chat_store.has_messages(session_id)
     chat_store.add_message(session_id, "user", text)
     # 首条提问时,用它自动命名会话
-    if not history:
+    if not has_history:
         try:
             chat_store.rename_session(session_id, _session_title(text))
         except Exception:
@@ -682,7 +681,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 "source": source, "mode": mode, "refs": refs,
                 "retrieval_ms": retrieval_ms,
             })
-            messages = agent.build_answer_messages(text, history, decision)
+            messages = agent.build_answer_messages(text, None, decision)
             prompt_stats = agent.message_stats(messages)
             logger.info(
                 "chat.send.prompt session_id=%s request_id=%s message_count=%s char_count=%s history_messages=%s message_lengths=%s",

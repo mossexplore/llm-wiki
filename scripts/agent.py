@@ -150,9 +150,12 @@ def message_stats(messages: list[dict]) -> dict:
 
 
 def build_answer_messages(text: str, history: list | None, decision: dict) -> list[dict]:
-    """构造本轮发给大模型的 messages,便于服务端在请求前统计实际上下文大小。"""
+    """构造本轮发给大模型的 messages。
+
+    对话页面不做多轮上下文注入:每次请求只携带系统提示和本轮用户问题。
+    history 参数保留在函数签名中,兼容旧调用点,但不再写入 messages。
+    """
     messages = [{"role": "system", "content": WIKI_PROMPT if decision.get("source") == "wiki" else CHAT_SYSTEM_PROMPT}]
-    messages.extend(_history_messages(history))
     if decision.get("source") == "wiki":
         context_text = _context_block(decision.get("context", []), related=(decision.get("mode") == "fuzzy"))
         messages.append({"role": "user", "content": f"{context_text}\n\n【用户问题】\n{text}"})
