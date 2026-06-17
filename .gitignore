@@ -4,6 +4,10 @@ __pycache__/
 .env
 .claude/
 
+# Python 虚拟环境
+.venv/
+venv/
+
 # 检索索引（派生自 wiki/cases/*.md，可随时重建，不入库）
 index/
 *.db

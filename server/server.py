@@ -658,6 +658,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 
     def gen():
         acc = ""
+        source, mode, refs = "llm", "none", []
         try:
             decision = agent.retrieve(text)
             source = decision["source"]
@@ -669,7 +670,8 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 "retrieval_ms": decision.get("elapsed_ms", 0),
             })
             if source == "wiki":
-                stream = agent.stream_wiki_answer(decision)
+                # 命中知识库:检索资料 + 自定义提示词 → 大模型流式生成(RAG)
+                stream = agent.stream_wiki_answer(text, history, decision)
             else:
                 stream = agent.stream_llm_answer(text, history)
             for delta in stream:
@@ -695,7 +697,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             if acc.strip():
                 try:
                     chat_store.add_message(session_id, "assistant", acc,
-                                           answer_source="llm", retrieval_mode="none", refs=[])
+                                           answer_source=source, retrieval_mode=mode, refs=refs)
                 except Exception:
                     logger.exception("chat persist partial answer failed")
             yield _ndjson({"type": "error", "request_id": request_id, "error": str(e)})
