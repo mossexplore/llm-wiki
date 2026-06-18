@@ -265,6 +265,15 @@ sources:
 uvicorn server.server:app --reload --port 8000
 ```
 
+### 日志
+
+Web 服务启动后会自动创建本地 `logs/` 目录并写入：
+
+- `logs/access.log`：接口日志。每个 HTTP 请求都有开始、结束、状态码、耗时、客户端和 `request_id`。
+- `logs/app.log`：运行日志。包含启动、检索索引、模型流式调用、对话链路、异常堆栈，以及同一请求生命周期日志。
+
+响应头会返回 `X-Request-ID`，前端或调用方也可以主动传入同名请求头来串联排查。可用 `LOG_WIKI_LOG_DIR=/path/to/logs` 改写日志目录；本地 `logs/` 已被 `.gitignore` 忽略。
+
 ## 贡献指南
 
 欢迎贡献。适合本项目的改进包括：

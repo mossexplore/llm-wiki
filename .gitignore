@@ -14,3 +14,6 @@ index/
 *.db-shm
 *.db-wal
 config.yaml
+
+# 本地运行日志
+logs/

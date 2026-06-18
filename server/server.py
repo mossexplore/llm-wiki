@@ -27,17 +27,64 @@ import query                                 # noqa: E402
 import search_index                          # noqa: E402  检索索引(SQLite+FTS5)同步
 import agent                                 # noqa: E402  对话 Agent:先检索后大模型兜底
 import chat_store                            # noqa: E402  对话运营数据持久化(SQLite)
+import logging_config                        # noqa: E402  统一本地日志落盘
 import yaml                                  # noqa: E402
 
-from fastapi import FastAPI, Header, HTTPException            # noqa: E402
+from fastapi import FastAPI, Header, HTTPException, Request   # noqa: E402
 from fastapi.staticfiles import StaticFiles                   # noqa: E402
 from fastapi.responses import FileResponse, StreamingResponse  # noqa: E402
 from pydantic import BaseModel, Field                         # noqa: E402
 
+LOG_DIR = logging_config.setup_logging()
 app = FastAPI(title="log-wiki")
 STATIC = pathlib.Path(__file__).resolve().parent / "static"
 logger = logging.getLogger("log_wiki.server")
 logger.setLevel(logging.INFO)
+access_logger = logging.getLogger("log_wiki.access")
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """统一接口日志:每个 HTTP 请求都有开始/结束/异常记录与 request_id。"""
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    started = time.perf_counter()
+    client = request.client.host if request.client else "-"
+    method = request.method
+    path = request.url.path
+    query_string = request.url.query
+    path_qs = f"{path}?{query_string}" if query_string else path
+    access_logger.info(
+        "http.request.start request_id=%s method=%s path=%s client=%s",
+        request_id, method, path_qs, client,
+    )
+    logger.info(
+        "http.request.start request_id=%s method=%s path=%s client=%s",
+        request_id, method, path_qs, client,
+    )
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logger.exception(
+            "http.request.error request_id=%s method=%s path=%s client=%s elapsed_ms=%s",
+            request_id, method, path_qs, client, elapsed_ms,
+        )
+        access_logger.exception(
+            "http.request.error request_id=%s method=%s path=%s client=%s elapsed_ms=%s",
+            request_id, method, path_qs, client, elapsed_ms,
+        )
+        raise
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    response.headers["X-Request-ID"] = request_id
+    access_logger.info(
+        "http.request.done request_id=%s method=%s path=%s status=%s client=%s elapsed_ms=%s",
+        request_id, method, path_qs, response.status_code, client, elapsed_ms,
+    )
+    logger.info(
+        "http.request.done request_id=%s method=%s path=%s status=%s client=%s elapsed_ms=%s",
+        request_id, method, path_qs, response.status_code, client, elapsed_ms,
+    )
+    return response
 
 
 def _index_case_file(case_path: pathlib.Path) -> None:
@@ -60,6 +107,7 @@ def _index_remove(case_path: pathlib.Path) -> None:
 @app.on_event("startup")
 def _build_search_index() -> None:
     """启动时从 wiki/cases/ 整库重建索引,确保与磁盘文件一致(含离线手改的情况)。"""
+    logger.info("server.startup log_dir=%s root=%s static=%s", LOG_DIR, ROOT, STATIC)
     try:
         if search_index.backend.available():
             n = search_index.backend.reindex_all()
