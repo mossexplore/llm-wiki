@@ -44,7 +44,7 @@ EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原
 
 
 CONFIG_PATH = pathlib.Path(os.environ.get("INGEST_CONFIG", ROOT / "config.yaml"))
-_clients: dict = {}    # section -> (OpenAI client, model);按配置段缓存,支持差异化模型
+_clients: dict = {}    # section -> (OpenAI client, model, config_key);按配置段缓存,配置变化时自动刷新
 
 
 def _description(c: dict) -> str:
@@ -107,13 +107,16 @@ def load_config(section: str = "openai") -> dict:
 
 
 def _client_and_model(section: str = "openai"):
-    """懒加载 OpenAI 客户端;按配置段缓存。section=openai 写入用,chat 对话用。"""
-    if section not in _clients:
-        cfg = load_config(section)
-        model = cfg.get("model", "gpt-4o")
+    """懒加载 OpenAI 客户端;按配置段缓存,配置变化时自动刷新。"""
+    cfg = load_config(section)
+    model = cfg.get("model", "gpt-4o")
+    config_key = (cfg.get("api_key"), cfg.get("base_url") or None, model)
+    cached = _clients.get(section)
+    if not cached or cached[2] != config_key:
         client = OpenAI(api_key=cfg["api_key"], base_url=cfg.get("base_url") or None)
-        _clients[section] = (client, model)
-    return _clients[section]
+        _clients[section] = (client, model, config_key)
+    client, model, _ = _clients[section]
+    return client, model
 
 
 def call_llm(prompt: str) -> str:

@@ -14,3 +14,4 @@ openai:
 #   api_key: "sk-对话用密钥"              # 不填则继承 openai.api_key
 #   base_url: "https://api.openai.com/v1" # 不填则继承 openai.base_url
 #   model: "gpt-4o-mini"                  # 对话用的模型名
+#   thinking: true                         # 是否启用模型 Think/Thinking 模式;默认 true,设为 false 可降低首字等待

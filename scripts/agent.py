@@ -149,6 +149,29 @@ def message_stats(messages: list[dict]) -> dict:
     }
 
 
+def _bool_config(value, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("1", "true", "yes", "y", "on", "enabled", "enable"):
+            return True
+        if v in ("0", "false", "no", "n", "off", "disabled", "disable"):
+            return False
+    return default
+
+
+def _chat_thinking_enabled() -> bool:
+    """读取 chat 段 Thinking 开关;默认启用,禁用时才下发 provider 扩展参数。"""
+    cfg = ingest.load_config("chat")
+    value = cfg.get("thinking", cfg.get("think", cfg.get("enable_thinking")))
+    return _bool_config(value, default=True)
+
+
 def build_answer_messages(text: str, history: list | None, decision: dict) -> list[dict]:
     """构造本轮发给大模型的 messages。
 
@@ -168,18 +191,23 @@ def stream_messages(messages):
     """统一的大模型流式调用:逐段 yield 文本增量。对话用 config.yaml 的 chat 段(可与写入不同)。"""
     import time
     client, model = ingest._client_and_model("chat")
+    thinking_enabled = _chat_thinking_enabled()
     stats = message_stats(messages)
     started = time.perf_counter()
     logger.info(
-        "agent.chat.request model=%s message_count=%s char_count=%s history_messages=%s message_lengths=%s",
-        model, stats["message_count"], stats["char_count"], stats["history_messages"], stats["message_lengths"],
+        "agent.chat.request model=%s thinking_enabled=%s message_count=%s char_count=%s history_messages=%s message_lengths=%s",
+        model, thinking_enabled, stats["message_count"], stats["char_count"],
+        stats["history_messages"], stats["message_lengths"],
     )
-    stream = client.chat.completions.create(
-        model=model,
-        temperature=0.3,
-        messages=messages,
-        stream=True,
-    )
+    request_kwargs = {
+        "model": model,
+        "temperature": 0.3,
+        "messages": messages,
+        "stream": True,
+    }
+    if not thinking_enabled:
+        request_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+    stream = client.chat.completions.create(**request_kwargs)
     logger.info(
         "agent.chat.stream_created model=%s create_ms=%s",
         model, int((time.perf_counter() - started) * 1000),
