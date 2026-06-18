@@ -664,6 +664,16 @@ def chat_list_sessions():
     return {"items": chat_store.list_sessions()}
 
 
+@app.delete("/api/chat/sessions")
+def chat_clear_sessions():
+    deleted = chat_store.clear_sessions()
+    logger.info(
+        "chat.sessions.clear sessions=%s messages=%s feedback=%s",
+        deleted["sessions"], deleted["messages"], deleted["feedback"],
+    )
+    return {"ok": True, "deleted": deleted}
+
+
 @app.get("/api/chat/sessions/{session_id}/messages")
 def chat_get_messages(session_id: str):
     if not chat_store.session_exists(session_id):
@@ -708,6 +718,9 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
         source, mode, refs = "llm", "none", []
         retrieval_ms = 0
         first_delta_ms = None
+        model_wait_ms = None
+        model_request_start_ms = None
+        prompt_stats = {"message_count": None, "char_count": None, "history_messages": None}
         try:
             yield _ndjson({
                 "type": "status", "request_id": request_id, "stage": "retrieving",
@@ -737,13 +750,15 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 prompt_stats["history_messages"], prompt_stats["message_lengths"],
             )
             stream = agent.stream_messages(messages)
+            model_request_start_ms = int((time.perf_counter() - started) * 1000)
             yield _ndjson({
                 "type": "status", "request_id": request_id, "stage": "generating",
                 "source": source, "mode": mode, "retrieval_ms": retrieval_ms,
                 "message_count": prompt_stats["message_count"],
                 "prompt_chars": prompt_stats["char_count"],
                 "history_messages": prompt_stats["history_messages"],
-                "elapsed_ms": int((time.perf_counter() - started) * 1000),
+                "model_start_ms": model_request_start_ms,
+                "elapsed_ms": model_request_start_ms,
             })
             logger.info(
                 "chat.send.model_stream.start session_id=%s request_id=%s source=%s mode=%s retrieval_ms=%s elapsed_ms=%s",
@@ -753,9 +768,12 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             for delta in stream:
                 if first_delta_ms is None:
                     first_delta_ms = int((time.perf_counter() - started) * 1000)
+                    model_wait_ms = first_delta_ms - (model_request_start_ms or 0)
                     yield _ndjson({
                         "type": "status", "request_id": request_id, "stage": "first_delta",
                         "source": source, "mode": mode, "retrieval_ms": retrieval_ms,
+                        "model_start_ms": model_request_start_ms,
+                        "model_wait_ms": model_wait_ms,
                         "first_delta_ms": first_delta_ms,
                         "elapsed_ms": first_delta_ms,
                     })
@@ -765,20 +783,37 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     )
                 acc += delta
                 yield _ndjson({"type": "delta", "request_id": request_id, "text": delta})
+            total_ms = int((time.perf_counter() - started) * 1000)
+            if model_wait_ms is None and model_request_start_ms is not None:
+                model_wait_ms = total_ms - model_request_start_ms
             saved = chat_store.add_message(
                 session_id, "assistant", acc,
                 answer_source=source, retrieval_mode=mode, refs=refs,
-                elapsed_ms=retrieval_ms,
+                elapsed_ms=total_ms,
+                retrieval_ms=retrieval_ms,
+                model_wait_ms=model_wait_ms,
+                first_delta_ms=first_delta_ms,
+                total_ms=total_ms,
+                message_count=prompt_stats["message_count"],
+                prompt_chars=prompt_stats["char_count"],
+                history_messages=prompt_stats["history_messages"],
             )
             yield _ndjson({
                 "type": "done", "request_id": request_id, "message_id": saved["id"],
                 "source": source, "mode": mode, "refs": refs,
-                "retrieval_ms": retrieval_ms, "first_delta_ms": first_delta_ms,
+                "retrieval_ms": retrieval_ms,
+                "model_start_ms": model_request_start_ms,
+                "model_wait_ms": model_wait_ms,
+                "first_delta_ms": first_delta_ms,
+                "total_ms": total_ms,
+                "message_count": prompt_stats["message_count"],
+                "prompt_chars": prompt_stats["char_count"],
+                "history_messages": prompt_stats["history_messages"],
             })
             logger.info(
-                "chat.send.done session_id=%s request_id=%s source=%s mode=%s chars=%s retrieval_ms=%s first_delta_ms=%s elapsed_ms=%s",
-                session_id, request_id, source, mode, len(acc), retrieval_ms, first_delta_ms,
-                int((time.perf_counter() - started) * 1000),
+                "chat.send.done session_id=%s request_id=%s source=%s mode=%s chars=%s retrieval_ms=%s model_wait_ms=%s first_delta_ms=%s total_ms=%s",
+                session_id, request_id, source, mode, len(acc), retrieval_ms, model_wait_ms,
+                first_delta_ms, total_ms,
             )
         except Exception as e:
             logger.exception("chat.send.error session_id=%s request_id=%s", session_id, request_id)
@@ -786,7 +821,14 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             if acc.strip():
                 try:
                     chat_store.add_message(session_id, "assistant", acc,
-                                           answer_source=source, retrieval_mode=mode, refs=refs)
+                                           answer_source=source, retrieval_mode=mode, refs=refs,
+                                           retrieval_ms=retrieval_ms,
+                                           model_wait_ms=model_wait_ms,
+                                           first_delta_ms=first_delta_ms,
+                                           total_ms=int((time.perf_counter() - started) * 1000),
+                                           message_count=prompt_stats.get("message_count"),
+                                           prompt_chars=prompt_stats.get("char_count"),
+                                           history_messages=prompt_stats.get("history_messages"))
                 except Exception:
                     logger.exception("chat persist partial answer failed")
             yield _ndjson({"type": "error", "request_id": request_id, "error": str(e)})

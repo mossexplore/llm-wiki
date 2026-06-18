@@ -36,7 +36,14 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   answer_source   TEXT,                  -- 仅 assistant：'wiki'(检索命中) | 'llm'(大模型兜底)
   retrieval_mode  TEXT,                  -- 仅 assistant：检索结论 'exact' | 'fuzzy' | 'none'
   refs            TEXT,                  -- 仅 assistant：来源 wiki 列表 JSON，如 [{"file":"...","title":"..."}]
-  elapsed_ms      INTEGER,               -- 仅 assistant：检索耗时（毫秒），便于性能分析
+  elapsed_ms      INTEGER,               -- 兼容旧字段：历史上存检索耗时，新数据存总耗时（毫秒）
+  retrieval_ms    INTEGER,               -- 仅 assistant：知识库检索耗时（毫秒）
+  model_wait_ms   INTEGER,               -- 仅 assistant：从请求模型到首字的等待耗时（毫秒）
+  first_delta_ms  INTEGER,               -- 仅 assistant：从后端开始处理到首个模型正文 token 的耗时（毫秒）
+  total_ms        INTEGER,               -- 仅 assistant：从后端开始处理到回复完成并落库的总耗时（毫秒）
+  message_count   INTEGER,               -- 仅 assistant：本轮发送给模型的 messages 数
+  prompt_chars    INTEGER,               -- 仅 assistant：本轮发送给模型的总字符数
+  history_messages INTEGER,              -- 仅 assistant：本轮注入的历史消息数（当前默认为 0）
   created_at      TEXT NOT NULL          -- ISO 时间
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, seq);

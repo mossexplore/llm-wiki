@@ -165,6 +165,39 @@
       } catch (e) { showToast(String(e && e.message || e)); }
     }
 
+    async function clearChatSessions() {
+      if (state.chatStreaming) return;
+      const n = state.chatSessions.length;
+      if (!n) return;
+      const ok = await confirmModal({
+        title: '清空全部会话',
+        message: '确定清空全部历史会话吗?所有会话关联的问答记录和反馈都会被移除。',
+        confirmText: '清空', cancelText: '取消', danger: true,
+      });
+      if (!ok) return;
+      try {
+        stopChatLatencyTimer();
+        const r = await fetch('/api/chat/sessions', { method: 'DELETE' });
+        if (noBackend(r.status)) { showToast('后端未连接 · 无法清空'); return; }
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || '清空失败');
+        state.chatSessions = [];
+        state.chatActive = '';
+        state.chatMessages = [];
+        state.chatMessagesLoading = false;
+        state.chatStreamText = '';
+        state.chatStreamMeta = null;
+        state.chatStreamStatus = null;
+        state.chatInput = '';
+        render();
+        const deleted = data.deleted || {};
+        showToast('已清空 ' + (deleted.sessions || n) + ' 个会话');
+      } catch (e) {
+        render();
+        showToast(String(e && e.message || e));
+      }
+    }
+
     async function sendChatMessage() {
       if (state.chatStreaming) return;
       const text = (state.chatInput || '').trim();
@@ -237,6 +270,17 @@
             updateStreamDOM();
           } else if (ev.type === 'done') {
             doneMeta = ev;
+            state.chatStreamStatus = Object.assign({}, state.chatStreamStatus || {}, {
+              stage: 'done',
+              retrieval_ms: ev.retrieval_ms,
+              model_start_ms: ev.model_start_ms,
+              model_wait_ms: ev.model_wait_ms,
+              first_delta_ms: ev.first_delta_ms,
+              total_ms: ev.total_ms,
+              message_count: ev.message_count,
+              prompt_chars: ev.prompt_chars,
+              history_messages: ev.history_messages
+            });
           } else if (ev.type === 'error') {
             errored = ev.error || '生成失败';
           }
@@ -256,6 +300,14 @@
           answer_source: state.chatStreamMeta && state.chatStreamMeta.source || (doneMeta && doneMeta.source),
           retrieval_mode: state.chatStreamMeta && state.chatStreamMeta.mode || (doneMeta && doneMeta.mode),
           refs: (state.chatStreamMeta && state.chatStreamMeta.refs) || (doneMeta && doneMeta.refs) || [],
+          retrieval_ms: doneMeta && doneMeta.retrieval_ms,
+          model_wait_ms: doneMeta && doneMeta.model_wait_ms,
+          first_delta_ms: doneMeta && doneMeta.first_delta_ms,
+          total_ms: doneMeta && doneMeta.total_ms,
+          elapsed_ms: doneMeta && doneMeta.total_ms,
+          message_count: doneMeta && doneMeta.message_count,
+          prompt_chars: doneMeta && doneMeta.prompt_chars,
+          history_messages: doneMeta && doneMeta.history_messages,
         });
       }
       state.chatStreamText = '';
@@ -359,25 +411,50 @@
       return typeof ms === 'number' && isFinite(ms) ? (ms / 1000).toFixed(ms >= 10000 ? 1 : 2) + 's' : '—';
     }
 
-    function chatLatencyHtml() {
-      const st = state.chatStreamStatus || {};
+    function _num(v) {
+      return typeof v === 'number' && isFinite(v) ? v : null;
+    }
+
+    function chatMessageLatencyStatus(m) {
+      const retrieval = _num(m.retrieval_ms);
+      const legacyElapsed = _num(m.elapsed_ms);
+      const total = _num(m.total_ms);
+      const st = {
+        stage: 'done',
+        retrieval_ms: retrieval !== null ? retrieval : (total === null ? legacyElapsed : null),
+        model_wait_ms: _num(m.model_wait_ms),
+        first_delta_ms: _num(m.first_delta_ms),
+        total_ms: total,
+        message_count: _num(m.message_count),
+        prompt_chars: _num(m.prompt_chars),
+        history_messages: _num(m.history_messages)
+      };
+      return Object.values(st).some(v => typeof v === 'number') ? st : null;
+    }
+
+    function chatLatencyHtml(status, withId) {
+      const st = status || state.chatStreamStatus || {};
       const labels = {
         retrieving: '检索中',
         retrieved: '检索完成',
         generating: '请求模型',
-        first_delta: '生成中'
+        first_delta: '生成中',
+        done: '已完成'
       };
       const bits = ['<span>' + escapeHtml(labels[st.stage] || '处理中') + '</span>'];
       if (typeof st.retrieval_ms === 'number') bits.push('<span>检索 ' + fmtMs(st.retrieval_ms) + '</span>');
       if (typeof st.message_count === 'number' || typeof st.prompt_chars === 'number') {
         bits.push('<span>上下文 ' + (st.message_count || '—') + '条/' + (st.prompt_chars || 0) + '字</span>');
       }
+      if (typeof st.model_wait_ms === 'number') bits.push('<span>模型等待 ' + fmtMs(st.model_wait_ms) + '</span>');
       if (typeof st.first_delta_ms === 'number') bits.push('<span>首字 ' + fmtMs(st.first_delta_ms) + '</span>');
       else if (st.stage === 'generating') {
         const wait = typeof st.wait_ms === 'number' ? st.wait_ms : st.elapsed_ms;
         bits.push('<span>已等 ' + fmtMs(wait) + '</span>');
       }
-      return '<span class="chat-latency mono" id="chatLatency">' + bits.join('<span class="lat-dot">·</span>') + '</span>';
+      if (typeof st.total_ms === 'number') bits.push('<span>总耗时 ' + fmtMs(st.total_ms) + '</span>');
+      const idAttr = withId === false ? '' : ' id="chatLatency"';
+      return '<span class="chat-latency mono"' + idAttr + '>' + bits.join('<span class="lat-dot">·</span>') + '</span>';
     }
 
     async function openWikiDetail(file) {
@@ -474,13 +551,14 @@
         return '<div class="chat-row user"><div class="chat-bubble user">' + escapeHtml(m.content) + '</div></div>';
       }
       const refsHtml = chatRefsHtml(m.refs);
+      const latency = chatMessageLatencyStatus(m);
       const fbUp = m.feedback_rating === 'up' ? ' on' : '';
       const fbDown = m.feedback_rating === 'down' ? ' on down' : '';
       const isLocal = String(m.id || '').startsWith('local-');
       return '<div class="chat-row agent">' +
         '<div class="chat-avatar">' + iconChat() + '</div>' +
         '<div class="chat-bubble agent">' +
-          '<div class="chat-srcline">' + srcBadge(m.answer_source, m.retrieval_mode) + '</div>' +
+          '<div class="chat-srcline">' + srcBadge(m.answer_source, m.retrieval_mode) + (latency ? chatLatencyHtml(latency, false) : '') + '</div>' +
           '<div class="chat-md">' + renderMarkdown(m.content) + '</div>' +
           refsHtml +
           (isLocal ? '' :
@@ -519,7 +597,7 @@
           ? '<div class="chat-row agent"><div class="chat-avatar">' + iconChat() + '</div><div class="chat-bubble agent">' +
               '<div class="chat-srcline">' +
                 (state.chatStreamMeta ? srcBadge(state.chatStreamMeta.source, state.chatStreamMeta.mode) : '<span class="src-badge muted">' + iconSpin() + '检索中…</span>') +
-                chatLatencyHtml() +
+                chatLatencyHtml(null, true) +
               '</div>' +
               '<div class="chat-md" id="chatStreamBody">' + (state.chatStreamText ? renderMarkdown(state.chatStreamText) + '<span class="caret"></span>' : '<span class="caret"></span>') + '</div>' +
             '</div></div>'
@@ -542,6 +620,7 @@
           '<div class="card-head knowledge-head">' +
             '<div style="min-width:0"><div class="kicker" style="overflow:hidden;text-overflow:ellipsis">CHAT · AGENT</div><h3>会话</h3></div>' +
             '<div class="knowledge-actions">' +
+              (state.chatSessions.length ? '<button class="btn sm danger" id="chatClear" type="button" title="清空全部历史会话" ' + (state.chatStreaming ? 'disabled' : '') + '>' + iconTrash() + '清空</button>' : '') +
               '<button class="btn sm primary" id="chatNew" type="button" title="新建聊天">' + iconPlus() + '新建</button>' +
             '</div>' +
           '</div>' +
@@ -556,6 +635,7 @@
     function bindChatEvents() {
       const bindC = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
       bindC('chatNew', newChatSession);
+      bindC('chatClear', clearChatSessions);
       bindC('chatEmptyNew', newChatSession);
       bindC('chatSend', sendChatMessage);
       const ta = document.getElementById('chatInput');

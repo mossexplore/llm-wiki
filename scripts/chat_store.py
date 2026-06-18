@@ -24,6 +24,15 @@ SCHEMA_PATH = ROOT / "db" / "schema.chat.sql"
 logger = logging.getLogger("log_wiki.chat_store")
 
 _initialized = False
+MESSAGE_LATENCY_COLUMNS = {
+    "retrieval_ms": "INTEGER",
+    "model_wait_ms": "INTEGER",
+    "first_delta_ms": "INTEGER",
+    "total_ms": "INTEGER",
+    "message_count": "INTEGER",
+    "prompt_chars": "INTEGER",
+    "history_messages": "INTEGER",
+}
 
 
 def _now() -> str:
@@ -44,11 +53,20 @@ def _connect() -> sqlite3.Connection:
     if not _initialized:
         try:
             conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+            _migrate(conn)
             conn.commit()
             _initialized = True
         except Exception:
             logger.exception("chat_store schema init failed db=%s", DB_PATH)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """轻量迁移运行库:补齐新增运营字段,保留已有对话数据。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(chat_messages)").fetchall()}
+    for name, typ in MESSAGE_LATENCY_COLUMNS.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE chat_messages ADD COLUMN {name} {typ}")
 
 
 # ----------------------------- 会话 -----------------------------
@@ -119,10 +137,30 @@ def delete_session(session_id: str) -> bool:
         conn.close()
 
 
+def clear_sessions() -> dict:
+    """清空全部对话会话、消息和反馈。"""
+    conn = _connect()
+    try:
+        sessions = conn.execute("SELECT count(*) FROM chat_sessions").fetchone()[0]
+        messages = conn.execute("SELECT count(*) FROM chat_messages").fetchone()[0]
+        feedback = conn.execute("SELECT count(*) FROM chat_feedback").fetchone()[0]
+        conn.execute("DELETE FROM chat_feedback")
+        conn.execute("DELETE FROM chat_messages")
+        conn.execute("DELETE FROM chat_sessions")
+        conn.commit()
+        return {"sessions": sessions, "messages": messages, "feedback": feedback}
+    finally:
+        conn.close()
+
+
 # ----------------------------- 消息 -----------------------------
 def add_message(session_id: str, role: str, content: str,
                 answer_source: str | None = None, retrieval_mode: str | None = None,
-                refs: list | None = None, elapsed_ms: int | None = None) -> dict:
+                refs: list | None = None, elapsed_ms: int | None = None,
+                retrieval_ms: int | None = None, model_wait_ms: int | None = None,
+                first_delta_ms: int | None = None, total_ms: int | None = None,
+                message_count: int | None = None, prompt_chars: int | None = None,
+                history_messages: int | None = None) -> dict:
     """追加一条消息,返回完整记录(含生成的 id / seq)。会同时把会话 updated_at 顶到现在。"""
     mid = _new_id()
     now = _now()
@@ -135,9 +173,13 @@ def add_message(session_id: str, role: str, content: str,
         seq = row["next"]
         conn.execute(
             """INSERT INTO chat_messages
-               (id, session_id, seq, role, content, answer_source, retrieval_mode, refs, elapsed_ms, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (mid, session_id, seq, role, content, answer_source, retrieval_mode, refs_json, elapsed_ms, now),
+               (id, session_id, seq, role, content, answer_source, retrieval_mode, refs,
+                elapsed_ms, retrieval_ms, model_wait_ms, first_delta_ms, total_ms,
+                message_count, prompt_chars, history_messages, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (mid, session_id, seq, role, content, answer_source, retrieval_mode, refs_json,
+             elapsed_ms, retrieval_ms, model_wait_ms, first_delta_ms, total_ms,
+             message_count, prompt_chars, history_messages, now),
         )
         conn.execute("UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, session_id))
         conn.commit()
@@ -146,7 +188,10 @@ def add_message(session_id: str, role: str, content: str,
     return {
         "id": mid, "session_id": session_id, "seq": seq, "role": role, "content": content,
         "answer_source": answer_source, "retrieval_mode": retrieval_mode,
-        "refs": refs or [], "elapsed_ms": elapsed_ms, "created_at": now,
+        "refs": refs or [], "elapsed_ms": elapsed_ms, "retrieval_ms": retrieval_ms,
+        "model_wait_ms": model_wait_ms, "first_delta_ms": first_delta_ms, "total_ms": total_ms,
+        "message_count": message_count, "prompt_chars": prompt_chars,
+        "history_messages": history_messages, "created_at": now,
     }
 
 

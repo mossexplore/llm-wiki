@@ -1,17 +1,16 @@
-# OpenAI 接口配置样例 —— 真实密钥请只放在本地私有配置中
-env: "dev"                                 # 环境标识;dev 时 ingest.py 会设置 NO_PROXY=127.0.0.1
+# 完整 config.yaml 样例 —— 真实密钥请只放在本地私有配置中,不要提交 config.yaml
+env: "dev"                                # dev 时会设置 NO_PROXY=127.0.0.1;生产/代理环境可改为 product
 
-# openai 段:写入知识(LLM 抽取)用,也是对话段缺省时的默认基底。
+# openai 段:写入知识(LLM 抽取)用。
 openai:
-  api_key: "sk-你的密钥"                  # 必填
-  base_url: "https://api.openai.com/v1"  # 可选;走代理/Azure/本地兼容网关时改这里,留空则用官方默认
-  model: "gpt-4o"                         # 可选;抽取用的模型名,默认 gpt-4o
+  api_key: "sk-写入知识用密钥"             # 必填
+  base_url: "https://api.openai.com/v1"   # 走代理/Azure/本地兼容网关时改这里;留空则用 SDK 默认
+  model: "gpt-4o"                        # 写入知识/结构化抽取用模型
 
-# chat 段(可选):对话 Agent 用,可与写入用不同的模型/网关/密钥。
-# 以 openai 段为基底,只需填要改的项(如只换 model),其余自动继承 openai;
-# 整段省略时,对话与写入用同一套配置(向后兼容)。
-# chat:
-#   api_key: "sk-对话用密钥"              # 不填则继承 openai.api_key
-#   base_url: "https://api.openai.com/v1" # 不填则继承 openai.base_url
-#   model: "gpt-4o-mini"                  # 对话用的模型名
-#   thinking: true                         # 是否启用模型 Think/Thinking 模式;默认 true,设为 false 可降低首字等待
+# chat 段:对话 Agent 用。会以 openai 段为基底,这里只需覆盖要改的项。
+# 如果对话和写入知识共用同一套网关/密钥,可以省略 api_key/base_url,只保留 model/thinking。
+chat:
+  api_key: "sk-对话用密钥"                # 不填则继承 openai.api_key
+  base_url: "https://api.openai.com/v1"   # 不填则继承 openai.base_url
+  model: "gpt-4o-mini"                   # 对话用模型
+  thinking: true                         # 是否启用 Think/Thinking 模式;默认 true,设为 false 可降低首字等待
