@@ -15,6 +15,7 @@
       maxStep: 1,
       rawInput: '',
       streamText: '',
+      previewProgress: null,
       previewing: false,
       parseErr: '',
       draft: null,
@@ -322,7 +323,7 @@
     function stepRows() {
       const defs = [
         { n: 1, label: '粘贴原文', meta: state.rawInput ? state.rawInput.length + ' 字 · 已读取' : '等待粘贴' },
-        { n: 2, label: '模型抽取', meta: state.previewing ? '流式生成中…' : (state.parseErr ? '解析失败' : (state.streamText ? 'JSON · 已完成' : '等待解析')) },
+        { n: 2, label: '模型抽取', meta: state.previewing ? `${Math.round((state.previewProgress && state.previewProgress.percent) || 0)}% · 字段抽取中` : (state.parseErr ? '解析失败' : (state.streamText ? '字段 · 已完成' : '等待解析')) },
         { n: 3, label: '人工复核', meta: state.draft ? '可编辑核对' : '等待抽取' },
         { n: 4, label: '确认入库', meta: state.committed ? '已写入' : '待入库' }
       ];

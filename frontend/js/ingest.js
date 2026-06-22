@@ -8,7 +8,7 @@
     async function doPreview() {
       const raw = state.rawInput;
       if (!raw.trim()) { showToast('请先粘贴原始排查记录'); return; }
-      Object.assign(state, { step: 2, maxStep: Math.max(state.maxStep, 2), previewing: true, streamText: '', parseErr: '', draft: null, committed: null });
+      Object.assign(state, { step: 2, maxStep: Math.max(state.maxStep, 2), previewing: true, streamText: '', previewProgress: calcExtractionProgress(''), parseErr: '', draft: null, committed: null });
       render();
       const requestId = newRequestId();
       let httpStatus = null;
@@ -35,11 +35,13 @@
           if (done) break;
           acc += decoder.decode(value, { stream: true });
           state.streamText = acc;
+          state.previewProgress = calcExtractionProgress(acc);
           render();
         }
         if (acc.includes('[ERROR]')) throw new Error(acc);
         normalizedText = normalizeJsonText(acc);
         state.draft = toDraft(JSON.parse(normalizedText), raw);
+        state.previewProgress = calcExtractionProgress(acc, true);
         goToStep(3);
         state.previewing = false;
         console.info('[log-wiki] ingest preview parsed', {
@@ -69,12 +71,15 @@
     async function demoPreview(raw) {
       const obj = state.sample.case || SAMPLE_CASE_FALLBACK;
       const json = JSON.stringify(obj, null, 2);
+      state.previewProgress = calcExtractionProgress('');
       for (let k = 1; k <= 6; k++) {
         await new Promise(r => setTimeout(r, 90));
         state.streamText = json.slice(0, Math.round(json.length * k / 6));
+        state.previewProgress = calcExtractionProgress(state.streamText);
         render();
       }
       state.streamText = json;
+      state.previewProgress = calcExtractionProgress(json, true);
       state.draft = toDraft(obj, raw);
       goToStep(3);
       state.previewing = false;
@@ -134,8 +139,68 @@
     }
 
     function resetIngest() {
-      Object.assign(state, { step: 1, maxStep: 1, rawInput: '', streamText: '', parseErr: '', draft: null, committed: null });
+      Object.assign(state, { step: 1, maxStep: 1, rawInput: '', streamText: '', previewProgress: null, parseErr: '', draft: null, committed: null });
       render();
+    }
+
+    const EXTRACTION_FIELDS = [
+      { key: 'title', label: '标题', weight: 10, type: 'string' },
+      { key: 'category', label: '类别', weight: 8, type: 'string' },
+      { key: 'signatures', label: '报错签名', weight: 16, type: 'array' },
+      { key: 'components', label: '组件', weight: 10, type: 'array' },
+      { key: 'background', label: '问题背景', weight: 18, type: 'string' },
+      { key: 'diagnosis', label: '定位过程', weight: 20, type: 'string' },
+      { key: 'solution', label: '解决方案', weight: 18, type: 'string' }
+    ];
+
+    function calcExtractionProgress(text, complete = false) {
+      const raw = String(text || '');
+      const fields = EXTRACTION_FIELDS.map(f => {
+        const seen = new RegExp('"' + f.key + '"\\s*:', 's').test(raw);
+        let filled = false;
+        if (f.type === 'array') {
+          const m = raw.match(new RegExp('"' + f.key + '"\\s*:\\s*\\[([\\s\\S]*)', 's'));
+          if (m) {
+            const beforeClose = m[1].split(']')[0] || '';
+            filled = /"((?:\\.|[^"\\])+)"/.test(beforeClose);
+          }
+        } else {
+          const m = raw.match(new RegExp('"' + f.key + '"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)', 's'));
+          filled = !!(m && m[1] && m[1].trim());
+        }
+        return Object.assign({}, f, { seen, filled, progress: filled ? 1 : (seen ? 0.25 : 0) });
+      });
+      let percent = fields.reduce((sum, f) => sum + f.weight * f.progress, raw ? 3 : 0);
+      percent = Math.max(raw ? 3 : 0, Math.min(complete ? 100 : 94, Math.round(percent)));
+      const active = fields.find(f => !f.filled && f.seen) || fields.find(f => !f.filled) || fields[fields.length - 1];
+      return { percent, fields, activeKey: active && active.key };
+    }
+
+    function renderExtractionProgress() {
+      const progress = state.previewProgress || calcExtractionProgress(state.streamText || '', !state.previewing && !state.parseErr);
+      const pct = Math.max(0, Math.min(100, Math.round(progress.percent || 0)));
+      const filled = progress.fields.filter(f => f.filled).length;
+      const current = progress.fields.find(f => f.key === progress.activeKey);
+      const status = state.parseErr ? '解析失败' : (state.previewing ? `正在抽取${current ? current.label : '字段'}…` : '字段抽取完成');
+      return `
+        <div class="extract-progress" aria-live="polite">
+          <div class="extract-meter-row">
+            <div>
+              <div class="extract-title">${escapeHtml(status)}</div>
+              <div class="extract-sub">${filled}/${progress.fields.length} 个字段已识别 · 基于模型流式输出实时计算</div>
+            </div>
+            <div class="extract-percent mono">${pct}%</div>
+          </div>
+          <div class="extract-track" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="字段抽取进度">
+            <div class="extract-fill" style="width:${pct}%"></div>
+          </div>
+          <div class="extract-fields">
+            ${progress.fields.map(f => {
+              const cls = f.filled ? 'done' : (f.key === progress.activeKey && state.previewing ? 'active' : '');
+              return `<div class="extract-field ${cls}"><span class="extract-check">${f.filled ? iconCheck() : ''}</span><span>${escapeHtml(f.label)}</span><span class="mono">${f.weight}%</span></div>`;
+            }).join('')}
+          </div>
+        </div>`;
     }
 
     function renderIngestMain() {
@@ -170,7 +235,7 @@
               ${state.previewing ? '<span class="badge info"><span class="dot pulse"></span>生成中</span>' : '<span class="badge ok"><span class="dot"></span>已完成</span>'}
             </div>
             <div class="card-pad">
-              <pre class="codebox">${escapeHtml(state.streamText)}${state.previewing ? '<span class="caret"></span>' : ''}</pre>
+              ${renderExtractionProgress()}
               ${state.parseErr ? `
                 <div class="result-block warn" style="border-left-color:var(--danger);background:var(--danger-soft);margin-top:13px">
                   <div style="font-size:13px;font-weight:650;color:var(--danger)">解析失败</div>
