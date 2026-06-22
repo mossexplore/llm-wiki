@@ -59,7 +59,7 @@ class MySQLSearch(SearchBackend):
         cid = case["id"]
         sigs = case.get("signatures") or []
         comps = case.get("components") or []
-        conn.execute(text("DELETE FROM case_signatures WHERE case_id=:case_id"), {"case_id": cid})
+        conn.execute(text("DELETE FROM t_case_signatures WHERE case_id=:case_id"), {"case_id": cid})
         params = {
             "id": cid,
             "file": case.get("file", ""),
@@ -75,7 +75,7 @@ class MySQLSearch(SearchBackend):
             "updated_at": case.get("updated_at", ""),
         }
         conn.execute(text(
-            """INSERT INTO cases
+            """INSERT INTO t_cases
                (id, file, title, category, status, confidence, components,
                 signatures_text, background, diagnosis, solution, updated_at)
                VALUES (:id,:file,:title,:category,:status,:confidence,:components,
@@ -89,7 +89,7 @@ class MySQLSearch(SearchBackend):
         ), params)
         for s in sigs:
             conn.execute(
-                text("INSERT INTO case_signatures(case_id, signature) VALUES(:case_id,:signature)"),
+                text("INSERT INTO t_case_signatures(case_id, signature) VALUES(:case_id,:signature)"),
                 {"case_id": cid, "signature": s},
             )
 
@@ -104,16 +104,16 @@ class MySQLSearch(SearchBackend):
             return
         _, text = self._sqlalchemy()
         with self._engine_instance().begin() as conn:
-            conn.execute(text("DELETE FROM case_signatures WHERE case_id=:case_id"), {"case_id": case_id})
-            conn.execute(text("DELETE FROM cases WHERE id=:case_id"), {"case_id": case_id})
+            conn.execute(text("DELETE FROM t_case_signatures WHERE case_id=:case_id"), {"case_id": case_id})
+            conn.execute(text("DELETE FROM t_cases WHERE id=:case_id"), {"case_id": case_id})
 
     def reindex_all(self) -> int:
         if not self.available():
             return 0
         _, text = self._sqlalchemy()
         with self._engine_instance().begin() as conn:
-            conn.execute(text("DELETE FROM case_signatures"))
-            conn.execute(text("DELETE FROM cases"))
+            conn.execute(text("DELETE FROM t_case_signatures"))
+            conn.execute(text("DELETE FROM t_cases"))
             n = 0
             for path in sorted(CASES_DIR.rglob("*.md")):
                 case = case_from_file(path)
@@ -127,7 +127,7 @@ class MySQLSearch(SearchBackend):
             return
         _, text = self._sqlalchemy()
         with self._engine_instance().begin() as conn:
-            row = conn.execute(text("SELECT count(*) AS n FROM cases")).mappings().one()
+            row = conn.execute(text("SELECT count(*) AS n FROM t_cases")).mappings().one()
             empty = row["n"] == 0
         if empty and any(case_from_file(p) for p in CASES_DIR.rglob("*.md")):
             self.reindex_all()
@@ -141,7 +141,7 @@ class MySQLSearch(SearchBackend):
         log_low = log.lower()
         _, text = self._sqlalchemy()
         with self._engine_instance().begin() as conn:
-            sig_rows = conn.execute(text("SELECT case_id, signature FROM case_signatures")).mappings().all()
+            sig_rows = conn.execute(text("SELECT case_id, signature FROM t_case_signatures")).mappings().all()
             matched: dict[str, list] = {}
             for row in sig_rows:
                 sig = row["signature"]
@@ -151,7 +151,7 @@ class MySQLSearch(SearchBackend):
                 hits = []
                 for cid, sigs in matched.items():
                     r = conn.execute(
-                        text("SELECT title, file, status, confidence, solution FROM cases WHERE id=:case_id"),
+                        text("SELECT title, file, status, confidence, solution FROM t_cases WHERE id=:case_id"),
                         {"case_id": cid},
                     ).mappings().first()
                     if not r:
@@ -170,7 +170,7 @@ class MySQLSearch(SearchBackend):
                     text("""SELECT title, file, status,
                               MATCH(title, signatures_text, components, background, diagnosis, solution)
                               AGAINST(:query_text IN NATURAL LANGUAGE MODE) AS score
-                       FROM cases
+                       FROM t_cases
                        WHERE MATCH(title, signatures_text, components, background, diagnosis, solution)
                              AGAINST(:query_text IN NATURAL LANGUAGE MODE)
                        ORDER BY score DESC LIMIT :limit"""),
@@ -190,8 +190,8 @@ class MySQLSearch(SearchBackend):
         self.ensure_built()
         _, text = self._sqlalchemy()
         with self._engine_instance().begin() as conn:
-            cases = conn.execute(text("SELECT count(*) AS n FROM cases")).mappings().one()["n"]
-            signatures = conn.execute(text("SELECT count(*) AS n FROM case_signatures")).mappings().one()["n"]
+            cases = conn.execute(text("SELECT count(*) AS n FROM t_cases")).mappings().one()["n"]
+            signatures = conn.execute(text("SELECT count(*) AS n FROM t_case_signatures")).mappings().one()["n"]
         return {
             "backend": "mysql",
             "available": True,

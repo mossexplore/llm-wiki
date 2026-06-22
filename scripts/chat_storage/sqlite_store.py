@@ -39,10 +39,10 @@ def _connect() -> sqlite3.Connection:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """轻量迁移运行库:补齐新增运营字段,保留已有对话数据。"""
-    cols = {r["name"] for r in conn.execute("PRAGMA table_info(chat_messages)").fetchall()}
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(t_chat_messages)").fetchall()}
     for name, typ in MESSAGE_LATENCY_COLUMNS.items():
         if name not in cols:
-            conn.execute(f"ALTER TABLE chat_messages ADD COLUMN {name} {typ}")
+            conn.execute(f"ALTER TABLE t_chat_messages ADD COLUMN {name} {typ}")
 
 
 def create_session(title: str = "新会话") -> dict:
@@ -51,7 +51,7 @@ def create_session(title: str = "新会话") -> dict:
     conn = _connect()
     try:
         conn.execute(
-            "INSERT INTO chat_sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)",
+            "INSERT INTO t_chat_sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)",
             (sid, title or "新会话", ts, ts),
         )
         conn.commit()
@@ -65,8 +65,8 @@ def list_sessions() -> list[dict]:
     try:
         rows = conn.execute(
             """SELECT s.id, s.title, s.created_at, s.updated_at,
-                      (SELECT count(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count
-               FROM chat_sessions s
+                      (SELECT count(*) FROM t_chat_messages m WHERE m.session_id = s.id) AS message_count
+               FROM t_chat_sessions s
                ORDER BY s.updated_at DESC"""
         ).fetchall()
         return [dict(r) for r in rows]
@@ -77,7 +77,7 @@ def list_sessions() -> list[dict]:
 def session_exists(session_id: str) -> bool:
     conn = _connect()
     try:
-        return conn.execute("SELECT 1 FROM chat_sessions WHERE id=?", (session_id,)).fetchone() is not None
+        return conn.execute("SELECT 1 FROM t_chat_sessions WHERE id=?", (session_id,)).fetchone() is not None
     finally:
         conn.close()
 
@@ -85,7 +85,7 @@ def session_exists(session_id: str) -> bool:
 def has_messages(session_id: str) -> bool:
     conn = _connect()
     try:
-        return conn.execute("SELECT 1 FROM chat_messages WHERE session_id=? LIMIT 1", (session_id,)).fetchone() is not None
+        return conn.execute("SELECT 1 FROM t_chat_messages WHERE session_id=? LIMIT 1", (session_id,)).fetchone() is not None
     finally:
         conn.close()
 
@@ -93,7 +93,7 @@ def has_messages(session_id: str) -> bool:
 def rename_session(session_id: str, title: str) -> None:
     conn = _connect()
     try:
-        conn.execute("UPDATE chat_sessions SET title=?, updated_at=? WHERE id=?",
+        conn.execute("UPDATE t_chat_sessions SET title=?, updated_at=? WHERE id=?",
                      (title, now(), session_id))
         conn.commit()
     finally:
@@ -103,9 +103,9 @@ def rename_session(session_id: str, title: str) -> None:
 def delete_session(session_id: str) -> bool:
     conn = _connect()
     try:
-        cur = conn.execute("DELETE FROM chat_sessions WHERE id=?", (session_id,))
-        conn.execute("DELETE FROM chat_messages WHERE session_id=?", (session_id,))
-        conn.execute("DELETE FROM chat_feedback WHERE session_id=?", (session_id,))
+        cur = conn.execute("DELETE FROM t_chat_sessions WHERE id=?", (session_id,))
+        conn.execute("DELETE FROM t_chat_messages WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM t_chat_feedback WHERE session_id=?", (session_id,))
         conn.commit()
         return cur.rowcount > 0
     finally:
@@ -116,12 +116,12 @@ def clear_sessions() -> dict:
     """清空全部对话会话、消息和反馈。"""
     conn = _connect()
     try:
-        sessions = conn.execute("SELECT count(*) FROM chat_sessions").fetchone()[0]
-        messages = conn.execute("SELECT count(*) FROM chat_messages").fetchone()[0]
-        feedback = conn.execute("SELECT count(*) FROM chat_feedback").fetchone()[0]
-        conn.execute("DELETE FROM chat_feedback")
-        conn.execute("DELETE FROM chat_messages")
-        conn.execute("DELETE FROM chat_sessions")
+        sessions = conn.execute("SELECT count(*) FROM t_chat_sessions").fetchone()[0]
+        messages = conn.execute("SELECT count(*) FROM t_chat_messages").fetchone()[0]
+        feedback = conn.execute("SELECT count(*) FROM t_chat_feedback").fetchone()[0]
+        conn.execute("DELETE FROM t_chat_feedback")
+        conn.execute("DELETE FROM t_chat_messages")
+        conn.execute("DELETE FROM t_chat_sessions")
         conn.commit()
         return {"sessions": sessions, "messages": messages, "feedback": feedback}
     finally:
@@ -142,11 +142,11 @@ def add_message(session_id: str, role: str, content: str,
     conn = _connect()
     try:
         row = conn.execute(
-            "SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM chat_messages WHERE session_id=?",
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM t_chat_messages WHERE session_id=?",
             (session_id,)).fetchone()
         seq = row["next"]
         conn.execute(
-            """INSERT INTO chat_messages
+            """INSERT INTO t_chat_messages
                (id, session_id, seq, role, content, answer_source, retrieval_mode, refs,
                 elapsed_ms, retrieval_ms, model_wait_ms, first_delta_ms, total_ms,
                 message_count, prompt_chars, history_messages, created_at)
@@ -155,7 +155,7 @@ def add_message(session_id: str, role: str, content: str,
              elapsed_ms, retrieval_ms, model_wait_ms, first_delta_ms, total_ms,
              message_count, prompt_chars, history_messages, ts),
         )
-        conn.execute("UPDATE chat_sessions SET updated_at=? WHERE id=?", (ts, session_id))
+        conn.execute("UPDATE t_chat_sessions SET updated_at=? WHERE id=?", (ts, session_id))
         conn.commit()
     finally:
         conn.close()
@@ -174,8 +174,8 @@ def get_messages(session_id: str) -> list[dict]:
     try:
         rows = conn.execute(
             """SELECT m.*, f.rating AS feedback_rating, f.reason AS feedback_reason
-               FROM chat_messages m
-               LEFT JOIN chat_feedback f ON f.message_id = m.id
+               FROM t_chat_messages m
+               LEFT JOIN t_chat_feedback f ON f.message_id = m.id
                WHERE m.session_id=? ORDER BY m.seq ASC""",
             (session_id,)).fetchall()
         out = []
@@ -191,7 +191,7 @@ def get_messages(session_id: str) -> list[dict]:
 def message_exists(message_id: str) -> dict | None:
     conn = _connect()
     try:
-        r = conn.execute("SELECT id, session_id, role FROM chat_messages WHERE id=?", (message_id,)).fetchone()
+        r = conn.execute("SELECT id, session_id, role FROM t_chat_messages WHERE id=?", (message_id,)).fetchone()
         return dict(r) if r else None
     finally:
         conn.close()
@@ -202,16 +202,16 @@ def set_feedback(message_id: str, session_id: str, rating: str, reason: str | No
     ts = now()
     conn = _connect()
     try:
-        existing = conn.execute("SELECT id FROM chat_feedback WHERE message_id=?", (message_id,)).fetchone()
+        existing = conn.execute("SELECT id FROM t_chat_feedback WHERE message_id=?", (message_id,)).fetchone()
         if existing:
             conn.execute(
-                "UPDATE chat_feedback SET rating=?, reason=?, updated_at=? WHERE message_id=?",
+                "UPDATE t_chat_feedback SET rating=?, reason=?, updated_at=? WHERE message_id=?",
                 (rating, reason, ts, message_id))
             fid = existing["id"]
         else:
             fid = new_id()
             conn.execute(
-                """INSERT INTO chat_feedback (id, message_id, session_id, rating, reason, created_at, updated_at)
+                """INSERT INTO t_chat_feedback (id, message_id, session_id, rating, reason, created_at, updated_at)
                    VALUES (?,?,?,?,?,?,?)""",
                 (fid, message_id, session_id, rating, reason, ts, ts))
         conn.commit()
@@ -228,10 +228,10 @@ def stats() -> dict:
         return {
             "backend": "sqlite",
             "db": str(DB_PATH),
-            "sessions": one("SELECT count(*) FROM chat_sessions"),
-            "messages": one("SELECT count(*) FROM chat_messages"),
-            "up": one("SELECT count(*) FROM chat_feedback WHERE rating='up'"),
-            "down": one("SELECT count(*) FROM chat_feedback WHERE rating='down'"),
+            "sessions": one("SELECT count(*) FROM t_chat_sessions"),
+            "messages": one("SELECT count(*) FROM t_chat_messages"),
+            "up": one("SELECT count(*) FROM t_chat_feedback WHERE rating='up'"),
+            "down": one("SELECT count(*) FROM t_chat_feedback WHERE rating='down'"),
         }
     finally:
         conn.close()

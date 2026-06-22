@@ -5,7 +5,7 @@
 -- 会话、消息、反馈和时延指标。
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS chat_sessions (
+CREATE TABLE IF NOT EXISTS t_chat_sessions (
   id          VARCHAR(64) PRIMARY KEY,
   title       VARCHAR(255) NOT NULL DEFAULT '新会话',
   created_at  VARCHAR(40) NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   INDEX idx_chat_sessions_updated (updated_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS chat_messages (
+CREATE TABLE IF NOT EXISTS t_chat_messages (
   id               VARCHAR(64) PRIMARY KEY,
   session_id       VARCHAR(64) NOT NULL,
   seq              INTEGER NOT NULL,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   INDEX idx_chat_messages_session (session_id, seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS chat_feedback (
+CREATE TABLE IF NOT EXISTS t_chat_feedback (
   id          VARCHAR(64) PRIMARY KEY,
   message_id  VARCHAR(64) NOT NULL UNIQUE,
   session_id  VARCHAR(64) NOT NULL,

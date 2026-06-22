@@ -13,11 +13,11 @@
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
--- cases：一行一个案例（派生自一个 wiki/cases/*.md 文件）
+-- t_cases：一行一个案例（派生自一个 wiki/cases/*.md 文件）
 -- 主键 rowid 是自增整数，用于和 FTS 虚拟表对齐（FTS5 以 rowid 关联）。
 -- 业务键 id = 案例文件名去掉 .md 的 slug（与后端写文件、删文件用的 key 一致）。
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS cases (
+CREATE TABLE IF NOT EXISTS t_cases (
   rowid            INTEGER PRIMARY KEY AUTOINCREMENT,
   id               TEXT    NOT NULL UNIQUE,   -- slug，= wiki/cases/<id>.md 的文件名主干
   file             TEXT    NOT NULL,          -- 相对仓库根的路径，如 wiki/cases/xxx.md
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS cases (
   status           TEXT,                      -- verified / draft
   confidence       TEXT,                      -- high / medium / low
   components       TEXT,                      -- 组件列表，以换行连接，仅供展示/调试
-  signatures_text  TEXT,                      -- signatures 列表，以换行连接（精确命中走 case_signatures）
+  signatures_text  TEXT,                      -- signatures 列表，以换行连接（精确命中走 t_case_signatures）
   background       TEXT,                      -- 「问题背景」正文
   diagnosis        TEXT,                      -- 「定位过程」正文
   solution         TEXT,                      -- 「解决方案」正文（精确命中直接回这段，省去读文件）
@@ -34,23 +34,23 @@ CREATE TABLE IF NOT EXISTS cases (
 );
 
 -- ---------------------------------------------------------------------------
--- case_signatures：精确命中专用，一条 signature 一行。
+-- t_case_signatures：精确命中专用，一条 signature 一行。
 -- 检索时把全部 signature 拉到应用层，判断「某条 signature 是否作为子串出现在用户日志里」。
 -- 这是知识库的「检索命门」：signature 必须原文照搬，精确命中优先级最高、且是无命中门控的依据。
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS case_signatures (
-  case_id    TEXT NOT NULL,                   -- 关联 cases.id
+CREATE TABLE IF NOT EXISTS t_case_signatures (
+  case_id    TEXT NOT NULL,                   -- 关联 t_cases.id
   signature  TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_case_signatures_case ON case_signatures(case_id);
+CREATE INDEX IF NOT EXISTS idx_case_signatures_case ON t_case_signatures(case_id);
 
 -- ---------------------------------------------------------------------------
--- cases_fts：全文检索（模糊召回），FTS5 + trigram 分词器。
+-- t_cases_fts：全文检索（模糊召回），FTS5 + trigram 分词器。
 -- trigram 按 3 字滑窗切词，中英文混排都能做子串匹配（中文无需额外分词插件）。
--- rowid 与 cases.rowid 一一对应；排序用内置 bm25()（越小越相关，ORDER BY ... ASC）。
+-- rowid 与 t_cases.rowid 一一对应；排序用内置 bm25()（越小越相关，ORDER BY ... ASC）。
 -- 注意：trigram 下「查询词」需 >= 3 个字符，2 字中文（如「内存」）需靠更长的上下文片段命中。
 -- ---------------------------------------------------------------------------
-CREATE VIRTUAL TABLE IF NOT EXISTS cases_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS t_cases_fts USING fts5(
   title,
   signatures_text,
   components,

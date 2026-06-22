@@ -65,7 +65,7 @@ def create_session(title: str = "新会话") -> dict:
     _, text = _sqlalchemy()
     with _connection() as conn:
         conn.execute(
-            text("INSERT INTO chat_sessions (id, title, created_at, updated_at) VALUES (:id,:title,:created_at,:updated_at)"),
+            text("INSERT INTO t_chat_sessions (id, title, created_at, updated_at) VALUES (:id,:title,:created_at,:updated_at)"),
             {"id": sid, "title": title or "新会话", "created_at": ts, "updated_at": ts},
         )
     return {"id": sid, "title": title or "新会话", "created_at": ts, "updated_at": ts, "message_count": 0}
@@ -76,8 +76,8 @@ def list_sessions() -> list[dict]:
     with _connection() as conn:
         return list(conn.execute(text(
             """SELECT s.id, s.title, s.created_at, s.updated_at,
-                      (SELECT count(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count
-               FROM chat_sessions s
+                      (SELECT count(*) FROM t_chat_messages m WHERE m.session_id = s.id) AS message_count
+               FROM t_chat_sessions s
                ORDER BY s.updated_at DESC"""
         )).mappings().all())
 
@@ -86,7 +86,7 @@ def session_exists(session_id: str) -> bool:
     _, text = _sqlalchemy()
     with _connection() as conn:
         return conn.execute(
-            text("SELECT 1 FROM chat_sessions WHERE id=:session_id"),
+            text("SELECT 1 FROM t_chat_sessions WHERE id=:session_id"),
             {"session_id": session_id},
         ).first() is not None
 
@@ -95,7 +95,7 @@ def has_messages(session_id: str) -> bool:
     _, text = _sqlalchemy()
     with _connection() as conn:
         return conn.execute(
-            text("SELECT 1 FROM chat_messages WHERE session_id=:session_id LIMIT 1"),
+            text("SELECT 1 FROM t_chat_messages WHERE session_id=:session_id LIMIT 1"),
             {"session_id": session_id},
         ).first() is not None
 
@@ -104,7 +104,7 @@ def rename_session(session_id: str, title: str) -> None:
     _, text = _sqlalchemy()
     with _connection() as conn:
         conn.execute(
-            text("UPDATE chat_sessions SET title=:title, updated_at=:updated_at WHERE id=:session_id"),
+            text("UPDATE t_chat_sessions SET title=:title, updated_at=:updated_at WHERE id=:session_id"),
             {"title": title, "updated_at": now(), "session_id": session_id},
         )
 
@@ -112,22 +112,22 @@ def rename_session(session_id: str, title: str) -> None:
 def delete_session(session_id: str) -> bool:
     _, text = _sqlalchemy()
     with _connection() as conn:
-        result = conn.execute(text("DELETE FROM chat_sessions WHERE id=:session_id"), {"session_id": session_id})
+        result = conn.execute(text("DELETE FROM t_chat_sessions WHERE id=:session_id"), {"session_id": session_id})
         deleted = result.rowcount > 0
-        conn.execute(text("DELETE FROM chat_messages WHERE session_id=:session_id"), {"session_id": session_id})
-        conn.execute(text("DELETE FROM chat_feedback WHERE session_id=:session_id"), {"session_id": session_id})
+        conn.execute(text("DELETE FROM t_chat_messages WHERE session_id=:session_id"), {"session_id": session_id})
+        conn.execute(text("DELETE FROM t_chat_feedback WHERE session_id=:session_id"), {"session_id": session_id})
         return deleted
 
 
 def clear_sessions() -> dict:
     _, text = _sqlalchemy()
     with _connection() as conn:
-        sessions = conn.execute(text("SELECT count(*) AS n FROM chat_sessions")).mappings().one()["n"]
-        messages = conn.execute(text("SELECT count(*) AS n FROM chat_messages")).mappings().one()["n"]
-        feedback = conn.execute(text("SELECT count(*) AS n FROM chat_feedback")).mappings().one()["n"]
-        conn.execute(text("DELETE FROM chat_feedback"))
-        conn.execute(text("DELETE FROM chat_messages"))
-        conn.execute(text("DELETE FROM chat_sessions"))
+        sessions = conn.execute(text("SELECT count(*) AS n FROM t_chat_sessions")).mappings().one()["n"]
+        messages = conn.execute(text("SELECT count(*) AS n FROM t_chat_messages")).mappings().one()["n"]
+        feedback = conn.execute(text("SELECT count(*) AS n FROM t_chat_feedback")).mappings().one()["n"]
+        conn.execute(text("DELETE FROM t_chat_feedback"))
+        conn.execute(text("DELETE FROM t_chat_messages"))
+        conn.execute(text("DELETE FROM t_chat_sessions"))
         return {"sessions": sessions, "messages": messages, "feedback": feedback}
 
 
@@ -144,11 +144,11 @@ def add_message(session_id: str, role: str, content: str,
     _, text = _sqlalchemy()
     with _connection() as conn:
         seq = conn.execute(
-            text("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM chat_messages WHERE session_id=:session_id"),
+            text("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM t_chat_messages WHERE session_id=:session_id"),
             {"session_id": session_id},
         ).mappings().one()["next"]
         conn.execute(
-            text("""INSERT INTO chat_messages
+            text("""INSERT INTO t_chat_messages
                (id, session_id, seq, role, content, answer_source, retrieval_mode, refs,
                 elapsed_ms, retrieval_ms, model_wait_ms, first_delta_ms, total_ms,
                 message_count, prompt_chars, history_messages, created_at)
@@ -176,7 +176,7 @@ def add_message(session_id: str, role: str, content: str,
             },
         )
         conn.execute(
-            text("UPDATE chat_sessions SET updated_at=:updated_at WHERE id=:session_id"),
+            text("UPDATE t_chat_sessions SET updated_at=:updated_at WHERE id=:session_id"),
             {"updated_at": ts, "session_id": session_id},
         )
     return {
@@ -194,8 +194,8 @@ def get_messages(session_id: str) -> list[dict]:
     with _connection() as conn:
         rows = conn.execute(
             text("""SELECT m.*, f.rating AS feedback_rating, f.reason AS feedback_reason
-               FROM chat_messages m
-               LEFT JOIN chat_feedback f ON f.message_id = m.id
+               FROM t_chat_messages m
+               LEFT JOIN t_chat_feedback f ON f.message_id = m.id
                WHERE m.session_id=:session_id ORDER BY m.seq ASC"""),
             {"session_id": session_id},
         ).mappings().all()
@@ -211,7 +211,7 @@ def message_exists(message_id: str) -> dict | None:
     _, text = _sqlalchemy()
     with _connection() as conn:
         row = conn.execute(
-            text("SELECT id, session_id, role FROM chat_messages WHERE id=:message_id"),
+            text("SELECT id, session_id, role FROM t_chat_messages WHERE id=:message_id"),
             {"message_id": message_id},
         ).mappings().first()
         return dict(row) if row else None
@@ -222,12 +222,12 @@ def set_feedback(message_id: str, session_id: str, rating: str, reason: str | No
     _, text = _sqlalchemy()
     with _connection() as conn:
         existing = conn.execute(
-            text("SELECT id FROM chat_feedback WHERE message_id=:message_id"),
+            text("SELECT id FROM t_chat_feedback WHERE message_id=:message_id"),
             {"message_id": message_id},
         ).mappings().first()
         if existing:
             conn.execute(
-                text("""UPDATE chat_feedback
+                text("""UPDATE t_chat_feedback
                    SET rating=:rating, reason=:reason, updated_at=:updated_at
                    WHERE message_id=:message_id"""),
                 {"rating": rating, "reason": reason, "updated_at": ts, "message_id": message_id},
@@ -236,7 +236,7 @@ def set_feedback(message_id: str, session_id: str, rating: str, reason: str | No
         else:
             fid = new_id()
             conn.execute(
-                text("""INSERT INTO chat_feedback
+                text("""INSERT INTO t_chat_feedback
                    (id, message_id, session_id, rating, reason, created_at, updated_at)
                    VALUES (:id,:message_id,:session_id,:rating,:reason,:created_at,:updated_at)"""),
                 {
@@ -261,8 +261,8 @@ def stats() -> dict:
         return {
             "backend": "mysql",
             "db": label(),
-            "sessions": one("SELECT count(*) AS n FROM chat_sessions"),
-            "messages": one("SELECT count(*) AS n FROM chat_messages"),
-            "up": one("SELECT count(*) AS n FROM chat_feedback WHERE rating='up'"),
-            "down": one("SELECT count(*) AS n FROM chat_feedback WHERE rating='down'"),
+            "sessions": one("SELECT count(*) AS n FROM t_chat_sessions"),
+            "messages": one("SELECT count(*) AS n FROM t_chat_messages"),
+            "up": one("SELECT count(*) AS n FROM t_chat_feedback WHERE rating='up'"),
+            "down": one("SELECT count(*) AS n FROM t_chat_feedback WHERE rating='down'"),
         }

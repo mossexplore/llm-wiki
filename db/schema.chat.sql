@@ -13,23 +13,23 @@
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
--- chat_sessions：一行一个会话（左侧「新建聊天」对应一行）。
+-- t_chat_sessions：一行一个会话（左侧「新建聊天」对应一行）。
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS chat_sessions (
+CREATE TABLE IF NOT EXISTS t_chat_sessions (
   id          TEXT PRIMARY KEY,          -- 会话 id（uuid）
   title       TEXT NOT NULL DEFAULT '新会话',  -- 会话标题，默认取首条用户提问的前若干字
   created_at  TEXT NOT NULL,             -- ISO 时间，创建时刻
   updated_at  TEXT NOT NULL             -- ISO 时间，最后一条消息时刻，用于列表按活跃排序
 );
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON chat_sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON t_chat_sessions(updated_at DESC);
 
 -- ---------------------------------------------------------------------------
--- chat_messages：一行一条消息（用户提问 or Agent 回复）。
+-- t_chat_messages：一行一条消息（用户提问 or Agent 回复）。
 -- 同一会话内按 created_at（+ seq）顺序排列，构成完整对话历史。
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS chat_messages (
+CREATE TABLE IF NOT EXISTS t_chat_messages (
   id              TEXT PRIMARY KEY,      -- 消息 id（uuid），点赞点踩按此关联
-  session_id      TEXT NOT NULL,         -- 关联 chat_sessions.id
+  session_id      TEXT NOT NULL,         -- 关联 t_chat_sessions.id
   seq             INTEGER NOT NULL,      -- 会话内自增序号，保证严格有序（同一毫秒也不乱）
   role            TEXT NOT NULL,         -- 'user' | 'assistant'
   content         TEXT NOT NULL,         -- 消息正文（用户提问原文 / Agent 完整回复）
@@ -46,21 +46,21 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   history_messages INTEGER,              -- 仅 assistant：本轮注入的历史消息数（当前默认为 0）
   created_at      TEXT NOT NULL          -- ISO 时间
 );
-CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, seq);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON t_chat_messages(session_id, seq);
 
 -- ---------------------------------------------------------------------------
--- chat_feedback：一行一条反馈（仅针对 assistant 消息）。
+-- t_chat_feedback：一行一条反馈（仅针对 assistant 消息）。
 -- 一条消息最多保留一条反馈（同一消息再次反馈 = 覆盖更新）。点踩必须带原因，
 -- 这些原因是发现「知识库盲区 / 答案不靠谱」的最直接运营信号。
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS chat_feedback (
+CREATE TABLE IF NOT EXISTS t_chat_feedback (
   id          TEXT PRIMARY KEY,          -- 反馈 id（uuid）
-  message_id  TEXT NOT NULL UNIQUE,      -- 关联 chat_messages.id，一条消息一条反馈
+  message_id  TEXT NOT NULL UNIQUE,      -- 关联 t_chat_messages.id，一条消息一条反馈
   session_id  TEXT NOT NULL,             -- 冗余存一份，便于按会话聚合统计
   rating      TEXT NOT NULL,             -- 'up'(点赞) | 'down'(点踩)
   reason      TEXT,                      -- 点踩原因（点赞时为空）
   created_at  TEXT NOT NULL,             -- ISO 时间
   updated_at  TEXT NOT NULL              -- ISO 时间，覆盖更新时刷新
 );
-CREATE INDEX IF NOT EXISTS idx_chat_feedback_rating ON chat_feedback(rating);
-CREATE INDEX IF NOT EXISTS idx_chat_feedback_session ON chat_feedback(session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_feedback_rating ON t_chat_feedback(rating);
+CREATE INDEX IF NOT EXISTS idx_chat_feedback_session ON t_chat_feedback(session_id);

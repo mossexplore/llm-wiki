@@ -45,16 +45,16 @@ class SqliteSearch(SearchBackend):
 
     def _upsert(self, conn: sqlite3.Connection, case: dict) -> None:
         cid = case["id"]
-        row = conn.execute("SELECT rowid FROM cases WHERE id=?", (cid,)).fetchone()
+        row = conn.execute("SELECT rowid FROM t_cases WHERE id=?", (cid,)).fetchone()
         if row:
             rid = row[0]
-            conn.execute("DELETE FROM cases_fts WHERE rowid=?", (rid,))
-            conn.execute("DELETE FROM cases WHERE rowid=?", (rid,))
-            conn.execute("DELETE FROM case_signatures WHERE case_id=?", (cid,))
+            conn.execute("DELETE FROM t_cases_fts WHERE rowid=?", (rid,))
+            conn.execute("DELETE FROM t_cases WHERE rowid=?", (rid,))
+            conn.execute("DELETE FROM t_case_signatures WHERE case_id=?", (cid,))
         sigs = case.get("signatures") or []
         comps = case.get("components") or []
         cur = conn.execute(
-            """INSERT INTO cases
+            """INSERT INTO t_cases
                (id, file, title, category, status, confidence, components,
                 signatures_text, background, diagnosis, solution, updated_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -68,11 +68,11 @@ class SqliteSearch(SearchBackend):
                                        case.get("diagnosis", ""),
                                        case.get("solution", "")]))
         conn.execute(
-            "INSERT INTO cases_fts(rowid, title, signatures_text, components, body) VALUES(?,?,?,?,?)",
+            "INSERT INTO t_cases_fts(rowid, title, signatures_text, components, body) VALUES(?,?,?,?,?)",
             (rid, case.get("title", ""), "\n".join(sigs), "\n".join(comps), body),
         )
         for s in sigs:
-            conn.execute("INSERT INTO case_signatures(case_id, signature) VALUES(?,?)", (cid, s))
+            conn.execute("INSERT INTO t_case_signatures(case_id, signature) VALUES(?,?)", (cid, s))
 
     def index_case(self, case: dict) -> None:
         if not self.available() or not case or not case.get("id"):
@@ -89,11 +89,11 @@ class SqliteSearch(SearchBackend):
             return
         conn = self._connect()
         try:
-            row = conn.execute("SELECT rowid FROM cases WHERE id=?", (case_id,)).fetchone()
+            row = conn.execute("SELECT rowid FROM t_cases WHERE id=?", (case_id,)).fetchone()
             if row:
-                conn.execute("DELETE FROM cases_fts WHERE rowid=?", (row[0],))
-                conn.execute("DELETE FROM cases WHERE rowid=?", (row[0],))
-                conn.execute("DELETE FROM case_signatures WHERE case_id=?", (case_id,))
+                conn.execute("DELETE FROM t_cases_fts WHERE rowid=?", (row[0],))
+                conn.execute("DELETE FROM t_cases WHERE rowid=?", (row[0],))
+                conn.execute("DELETE FROM t_case_signatures WHERE case_id=?", (case_id,))
                 conn.commit()
         finally:
             conn.close()
@@ -104,9 +104,9 @@ class SqliteSearch(SearchBackend):
             return 0
         conn = self._connect()
         try:
-            conn.execute("DELETE FROM cases_fts")
-            conn.execute("DELETE FROM cases")
-            conn.execute("DELETE FROM case_signatures")
+            conn.execute("DELETE FROM t_cases_fts")
+            conn.execute("DELETE FROM t_cases")
+            conn.execute("DELETE FROM t_case_signatures")
             n = 0
             for path in sorted(CASES_DIR.rglob("*.md")):
                 case = case_from_file(path)
@@ -119,7 +119,7 @@ class SqliteSearch(SearchBackend):
             conn.close()
 
     def _count(self, conn: sqlite3.Connection) -> int:
-        return conn.execute("SELECT count(*) FROM cases").fetchone()[0]
+        return conn.execute("SELECT count(*) FROM t_cases").fetchone()[0]
 
     def ensure_built(self) -> None:
         if not self.available():
@@ -141,7 +141,7 @@ class SqliteSearch(SearchBackend):
         log_low = log.lower()
         conn = self._connect()
         try:
-            sig_rows = conn.execute("SELECT case_id, signature FROM case_signatures").fetchall()
+            sig_rows = conn.execute("SELECT case_id, signature FROM t_case_signatures").fetchall()
             matched: dict[str, list] = {}
             for cid, sig in sig_rows:
                 if sig and sig.lower() in log_low:
@@ -150,7 +150,7 @@ class SqliteSearch(SearchBackend):
                 hits = []
                 for cid, sigs in matched.items():
                     r = conn.execute(
-                        "SELECT title, file, status, confidence, solution FROM cases WHERE id=?",
+                        "SELECT title, file, status, confidence, solution FROM t_cases WHERE id=?",
                         (cid,)).fetchone()
                     if not r:
                         continue
@@ -167,9 +167,9 @@ class SqliteSearch(SearchBackend):
             if match_q:
                 try:
                     rows = conn.execute(
-                        """SELECT c.title, c.file, c.status, bm25(cases_fts) AS score
-                           FROM cases_fts JOIN cases c ON c.rowid = cases_fts.rowid
-                           WHERE cases_fts MATCH ?
+                        """SELECT c.title, c.file, c.status, bm25(t_cases_fts) AS score
+                           FROM t_cases_fts JOIN t_cases c ON c.rowid = t_cases_fts.rowid
+                           WHERE t_cases_fts MATCH ?
                            ORDER BY score ASC LIMIT ?""",
                         (match_q, limit)).fetchall()
                 except sqlite3.OperationalError:
@@ -195,8 +195,8 @@ class SqliteSearch(SearchBackend):
                 "backend": "sqlite",
                 "available": True,
                 "db": str(self.db_path),
-                "cases": conn.execute("SELECT count(*) FROM cases").fetchone()[0],
-                "signatures": conn.execute("SELECT count(*) FROM case_signatures").fetchone()[0],
+                "cases": conn.execute("SELECT count(*) FROM t_cases").fetchone()[0],
+                "signatures": conn.execute("SELECT count(*) FROM t_case_signatures").fetchone()[0],
             }
         finally:
             conn.close()

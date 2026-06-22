@@ -28,9 +28,9 @@ wiki/cases/*.md  ──(回灌/同步)──▶  SQLite/MySQL 索引  ──(检
 
 | 表 | 作用 |
 | --- | --- |
-| `cases` | 一行一个案例(派生自一个 `wiki/cases/*.md`)。`rowid` 与 FTS 表对齐,`id` 是 slug(= 文件名主干)。 |
-| `case_signatures` | 精确命中专用,一条 signature 一行;应用层判断"signature 是否作为子串出现在用户日志里"。 |
-| `cases_fts` | FTS5 虚拟表,模糊召回用;`rowid` 与 `cases.rowid` 一一对应,`bm25()` 排序。 |
+| `t_cases` | 一行一个案例(派生自一个 `wiki/cases/*.md`)。`rowid` 与 FTS 表对齐,`id` 是 slug(= 文件名主干)。 |
+| `t_case_signatures` | 精确命中专用,一条 signature 一行;应用层判断"signature 是否作为子串出现在用户日志里"。 |
+| `t_cases_fts` | FTS5 虚拟表,模糊召回用;`rowid` 与 `t_cases.rowid` 一一对应,`bm25()` 排序。 |
 
 字段明细见 [schema.sqlite.sql](schema.sqlite.sql) 与 [schema.mysql.sql](schema.mysql.sql) 注释。
 
@@ -52,23 +52,23 @@ sqlite3 index/search.db
 
 ```sql
 -- 看索引里有哪些案例
-SELECT id, title, status, file FROM cases ORDER BY updated_at DESC;
+SELECT id, title, status, file FROM t_cases ORDER BY updated_at DESC;
 
 -- 精确命中:某条 signature 是否会被某段日志命中(应用层逻辑的等价手查)
-SELECT case_id, signature FROM case_signatures
+SELECT case_id, signature FROM t_case_signatures
 WHERE instr('你的整段日志(小写)', lower(signature)) > 0;
 
 -- 模糊召回:BM25 全文检索(bm25 越小越相关 → ORDER BY ASC)
-SELECT c.id, c.title, c.file, bm25(cases_fts) AS score
-FROM cases_fts JOIN cases c ON c.rowid = cases_fts.rowid
-WHERE cases_fts MATCH '"连接池" OR "timed out" OR "HikariPool"'
+SELECT c.id, c.title, c.file, bm25(t_cases_fts) AS score
+FROM t_cases_fts JOIN t_cases c ON c.rowid = t_cases_fts.rowid
+WHERE t_cases_fts MATCH '"连接池" OR "timed out" OR "HikariPool"'
 ORDER BY score ASC
 LIMIT 5;
 
 -- 只在已复核案例里模糊召回(前置过滤,提精度)
-SELECT c.id, c.title, bm25(cases_fts) AS score
-FROM cases_fts JOIN cases c ON c.rowid = cases_fts.rowid
-WHERE cases_fts MATCH '"OOM" OR "内存溢出"' AND c.status = 'verified'
+SELECT c.id, c.title, bm25(t_cases_fts) AS score
+FROM t_cases_fts JOIN t_cases c ON c.rowid = t_cases_fts.rowid
+WHERE t_cases_fts MATCH '"OOM" OR "内存溢出"' AND c.status = 'verified'
 ORDER BY score ASC;
 ```
 
@@ -97,7 +97,7 @@ MySQL 模糊召回使用 `MATCH ... AGAINST`:
 SELECT id, title, file,
        MATCH(title, signatures_text, components, background, diagnosis, solution)
        AGAINST('HikariPool request timed out' IN NATURAL LANGUAGE MODE) AS score
-FROM cases
+FROM t_cases
 WHERE MATCH(title, signatures_text, components, background, diagnosis, solution)
       AGAINST('HikariPool request timed out' IN NATURAL LANGUAGE MODE)
 ORDER BY score DESC
