@@ -176,14 +176,18 @@
       return { percent, fields, activeKey: active && active.key };
     }
 
-    function renderExtractionProgress() {
-      const progress = state.previewProgress || calcExtractionProgress(state.streamText || '', !state.previewing && !state.parseErr);
+    function renderExtractionProgress(options = {}) {
+      const isPreviewing = options.previewing != null ? options.previewing : state.previewing;
+      const hasError = options.parseErr != null ? options.parseErr : state.parseErr;
+      const streamText = options.streamText != null ? options.streamText : state.streamText;
+      const progress = options.progress || state.previewProgress || calcExtractionProgress(streamText || '', !isPreviewing && !hasError);
       const pct = Math.max(0, Math.min(100, Math.round(progress.percent || 0)));
       const filled = progress.fields.filter(f => f.filled).length;
       const current = progress.fields.find(f => f.key === progress.activeKey);
-      const status = state.parseErr ? '解析失败' : (state.previewing ? `正在抽取${current ? current.label : '字段'}…` : '字段抽取完成');
+      const status = hasError ? '解析失败' : (isPreviewing ? `正在抽取${current ? current.label : '字段'}…` : '字段抽取完成');
+      const cls = options.compact ? 'extract-progress compact' : 'extract-progress';
       return `
-        <div class="extract-progress" aria-live="polite">
+        <div class="${cls}" aria-live="polite">
           <div class="extract-meter-row">
             <div>
               <div class="extract-title">${escapeHtml(status)}</div>
@@ -196,8 +200,8 @@
           </div>
           <div class="extract-fields">
             ${progress.fields.map(f => {
-              const cls = f.filled ? 'done' : (f.key === progress.activeKey && state.previewing ? 'active' : '');
-              return `<div class="extract-field ${cls}"><span class="extract-check">${f.filled ? iconCheck() : ''}</span><span>${escapeHtml(f.label)}</span><span class="mono">${f.weight}%</span></div>`;
+              const cls = f.filled ? 'done' : (f.key === progress.activeKey && isPreviewing ? 'active' : '');
+              return `<div class="extract-field ${cls}"><span class="extract-check">${f.filled ? iconCheck() : ''}</span><span>${escapeHtml(f.label)}</span></div>`;
             }).join('')}
           </div>
         </div>`;
