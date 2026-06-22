@@ -171,9 +171,9 @@
         return Object.assign({}, f, { seen, filled, progress: filled ? 1 : (seen ? 0.25 : 0) });
       });
       let percent = fields.reduce((sum, f) => sum + f.weight * f.progress, raw ? 3 : 0);
-      percent = Math.max(raw ? 3 : 0, Math.min(complete ? 100 : 94, Math.round(percent)));
+      percent = complete ? 100 : Math.max(raw ? 3 : 0, Math.min(94, Math.round(percent)));
       const active = fields.find(f => !f.filled && f.seen) || fields.find(f => !f.filled) || fields[fields.length - 1];
-      return { percent, fields, activeKey: active && active.key };
+      return { percent, fields, activeKey: active && active.key, complete };
     }
 
     function renderExtractionProgress(options = {}) {
@@ -184,14 +184,16 @@
       const pct = Math.max(0, Math.min(100, Math.round(progress.percent || 0)));
       const filled = progress.fields.filter(f => f.filled).length;
       const current = progress.fields.find(f => f.key === progress.activeKey);
-      const status = hasError ? '解析失败' : (isPreviewing ? `正在抽取${current ? current.label : '字段'}…` : '字段抽取完成');
+      const done = !!progress.complete || (!isPreviewing && !hasError);
+      const status = hasError ? '解析失败' : (done ? '模型输出已结束' : `正在抽取${current ? current.label : '字段'}…`);
+      const sub = done ? `${filled}/${progress.fields.length} 个字段已识别 · 已完成解析` : `${filled}/${progress.fields.length} 个字段已识别 · 基于模型流式输出实时计算`;
       const cls = options.compact ? 'extract-progress compact' : 'extract-progress';
       return `
         <div class="${cls}" aria-live="polite">
           <div class="extract-meter-row">
             <div>
               <div class="extract-title">${escapeHtml(status)}</div>
-              <div class="extract-sub">${filled}/${progress.fields.length} 个字段已识别 · 基于模型流式输出实时计算</div>
+              <div class="extract-sub">${sub}</div>
             </div>
             <div class="extract-percent mono">${pct}%</div>
           </div>
