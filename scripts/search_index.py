@@ -3,15 +3,16 @@
 search_index.py — 检索索引后端（阶段 1：SQLite + FTS5 trigram）
 
 定位与护栏
-  - wiki/cases/*.md 永远是知识的权威源(OKF 不可变层);本模块维护的 SQLite 库只是
-    「派生索引」,用于把「模糊召回」从全量读文件 + token 交集,升级成 BM25 全文检索。
+  - wiki/cases/*.md 是可编辑、已复核案例的权威知识源;raw/sources/ 才是不可变溯源层。
+    本模块维护的 SQLite 库只是「派生索引」,用于把「模糊召回」从全量读文件 +
+    token 交集升级成 BM25 全文检索。
   - 入库/更新/删除知识时由后端(backend/server.py)同步本索引;索引可随时从文件整库重建。
   - signatures「精确命中」仍在应用层做子串匹配(见 search()),它是检索命门 + 无命中门控
     的依据,优先级最高,不交给全文检索的相关度排序。
 
 为什么是「接口 + 实现」
-  现在用本地 SQLite(零网络、零费用,契合现有护栏),语法与 Cloudflare D1 一致;
-  后期要换 D1 / MySQL 时,只需新增一个实现类,query.py / backend/server.py 调用面不变。
+  现在用本地 SQLite(零网络、零费用,契合现有护栏);后期要换 D1 / MySQL 时,
+  只需新增一个实现类,query.py / backend/server.py 调用面不变。
   迁移要点见 db/README.md 与 db/schema.mysql.sql。
 
 可单独运行(便于排障):
@@ -110,7 +111,7 @@ class SqliteSearch(SearchBackend):
         return conn
 
     def available(self) -> bool:
-        """探测当前 sqlite3 是否支持 FTS5 + trigram(D1 同样支持)。不支持则上层回退到文件检索。"""
+        """探测当前 sqlite3 是否支持 FTS5 + trigram。不支持则上层回退到文件检索。"""
         if self._ok is None:
             try:
                 c = sqlite3.connect(":memory:")
@@ -178,7 +179,7 @@ class SqliteSearch(SearchBackend):
             conn.close()
 
     def reindex_all(self) -> int:
-        """从 wiki/cases/ 整库重建。文件是权威源,任何疑似不一致都可调它修复。"""
+        """从 wiki/cases/ 整库重建。案例 Markdown 是权威源,索引不一致时可调它修复。"""
         if not self.available():
             return 0
         conn = self._connect()

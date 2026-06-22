@@ -42,7 +42,7 @@ SAMPLE_CASE = {
 
 @router.post("/api/ingest/preview")
 def ingest_preview(req: PreviewReq, x_request_id: Optional[str] = Header(default=None)):
-    """流式返回模型抽取的 JSON 文本;此步不写任何文件。"""
+    """流式返回模型抽取的 JSON 文本;前端据此计算字段进度,此步不写任何文件。"""
     raw = req.raw
     if not raw.strip():
         raise HTTPException(400, "内容为空")

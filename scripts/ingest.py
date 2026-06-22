@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-ingest.py — LLM Wiki 入库管线(三层结构版)
+ingest.py — LLM Wiki 入库辅助管线
 
-把一条原始排查记录:
-  1) 原样存档到 raw/sources/(不可变层)
-  2) 用 LLM 整理成结构化案例,落到 wiki/cases/_drafts/(待复核)
-案例 frontmatter 的 sources 指回 raw/,保证可溯源。
+核心职责:
+  1) 将原始排查记录原样存档到 raw/sources/(不可变溯源层)。
+  2) 调用 LLM 抽取结构化案例字段。
+  3) 生成带 YAML frontmatter 的案例 Markdown,sources 指回 raw/,保证可溯源。
+
+运行方式差异:
+  - CLI 直接运行本文件时,生成 wiki/cases/_drafts/ 下的 draft 草稿,供人工复核。
+  - Web 后端复用本模块的抽取、归档和 Markdown 生成函数;预览阶段不写文件,
+    用户确认后才写入 wiki/cases/ 下的 verified 案例。
 
 用法:
     python ingest.py raw_note.txt              # --id 缺省,用时间戳自动命名
@@ -137,7 +142,7 @@ def call_llm(prompt: str) -> str:
 
 
 def stream_llm(prompt: str):
-    """流式返回:逐段 yield 模型输出文本(增量)。Web 端实时展示用。"""
+    """流式返回:逐段 yield 模型输出文本增量。Web 端用它做预览解析与字段进度计算。"""
     client, model = _client_and_model()
     stream = client.chat.completions.create(
         model=model,

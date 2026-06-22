@@ -1,1 +1,1 @@
-"""FastAPI backend package for llm-wiki."""
+"""llm-wiki 的 FastAPI 后端包。"""

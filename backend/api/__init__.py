@@ -1,1 +1,1 @@
-"""Feature routers grouped by frontend page."""
+"""按前端页面功能分组的 API 路由模块。"""

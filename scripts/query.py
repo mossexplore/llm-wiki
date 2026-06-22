@@ -2,10 +2,11 @@
 """
 query.py — 用一段日志报错,从 wiki/cases/ 里找相似案例
 
-策略(对应 SKILL.md 的 query 流程):
+策略:
   1) 精确命中:遍历每个案例的 signatures,任一报错串作为子串出现在你的日志里 → 命中。
      (signatures 是知识库精选的检索锚点,比从日志里猜锚点更稳)
-  2) 无精确命中 → 退化为 token 重合度模糊召回,仅作"可能相关"提示,标注需人工判断。
+  2) 无精确命中 → 优先用 SQLite + FTS5/BM25 做模糊召回;索引不可用时回退到
+     纯文件 token 重合度召回。模糊结果仅作"可能相关"提示,标注需人工判断。
   3) 仍无 → 按命中门控明确告知"暂无相关案例",绝不编造。
 
 用法:
@@ -15,7 +16,7 @@ query.py — 用一段日志报错,从 wiki/cases/ 里找相似案例
 import sys, re, pathlib, time, logging
 
 try:
-    import search_index            # 与本文件同目录(backend/config.py 已把 scripts/ 加入 sys.path)
+    import search_index            # 后端导入时由 backend/config.py 加载 scripts/;CLI 运行时脚本目录本身可导入
 except ImportError:                # 直接 `python scripts/query.py` 时补一下路径
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     import search_index
