@@ -7,7 +7,7 @@ import re
 import sys
 import yaml
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 WIKI_DIR = ROOT / "wiki"
 CASES_DIR = WIKI_DIR / "cases"
 RAW_DIR = ROOT / "raw" / "sources"

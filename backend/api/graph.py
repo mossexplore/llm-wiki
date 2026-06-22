@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from ..config import ROOT  # noqa: F401
 
-import graph  # noqa: E402
+from knowledge_base import graph  # noqa: E402
 
 router = APIRouter()
 

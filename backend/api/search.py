@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from ..config import ROOT  # noqa: F401
 from ..schemas import QueryReq
 
-import query  # noqa: E402
+from knowledge_base import query  # noqa: E402
 
 router = APIRouter()
 

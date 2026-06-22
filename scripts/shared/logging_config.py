@@ -7,7 +7,7 @@ import os
 import pathlib
 from logging.handlers import RotatingFileHandler
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_LOG_DIR = ROOT / "logs"
 
 

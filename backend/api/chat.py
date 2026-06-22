@@ -8,8 +8,8 @@ from ..app_logging import logger
 from ..schemas import ChatMessageReq, FeedbackReq, SessionCreateReq
 from ..utils import ndjson
 
-import agent  # noqa: E402
 import chat_store  # noqa: E402
+from knowledge_base import agent  # noqa: E402
 
 router = APIRouter()
 

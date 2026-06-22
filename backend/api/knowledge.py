@@ -9,7 +9,7 @@ from ..config import CASES_DIR, ROOT
 from ..schemas import KnowledgeUpdateReq
 from ..search_sync import index_case_file, index_remove
 
-import ingest  # noqa: E402
+from knowledge_base import ingest  # noqa: E402
 
 router = APIRouter()
 

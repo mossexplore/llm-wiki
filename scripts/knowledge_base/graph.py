@@ -7,7 +7,7 @@ import pathlib
 import re
 import yaml
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 WIKI_DIR = ROOT / "wiki"
 RAW_DIR = ROOT / "raw" / "sources"
 RESERVED = {"index.md", "log.md"}

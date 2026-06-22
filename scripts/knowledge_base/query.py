@@ -5,23 +5,23 @@ query.py — 用一段日志报错,从 wiki/cases/ 里找相似案例
 策略:
   1) 精确命中:遍历每个案例的 signatures,任一报错串作为子串出现在你的日志里 → 命中。
      (signatures 是知识库精选的检索锚点,比从日志里猜锚点更稳)
-  2) 无精确命中 → 优先用 SQLite + FTS5/BM25 做模糊召回;索引不可用时回退到
+  2) 无精确命中 → 优先用已配置的检索索引后端做模糊召回;索引不可用时回退到
      纯文件 token 重合度召回。模糊结果仅作"可能相关"提示,标注需人工判断。
   3) 仍无 → 按命中门控明确告知"暂无相关案例",绝不编造。
 
 用法:
-    python query.py "把整段报错粘进来"
-    cat error.log | python query.py -
+    python scripts/knowledge_base/query.py "把整段报错粘进来"
+    cat error.log | python scripts/knowledge_base/query.py -
 """
 import sys, re, pathlib, time, logging
 
 try:
     import search_index            # 后端导入时由 backend/config.py 加载 scripts/;CLI 运行时脚本目录本身可导入
-except ImportError:                # 直接 `python scripts/query.py` 时补一下路径
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+except ImportError:                # 直接运行本文件时补一下 scripts/ 路径
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
     import search_index
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 CASES_DIR = ROOT / "wiki" / "cases"
 logger = logging.getLogger("log_wiki.query")
 
@@ -101,8 +101,8 @@ def search(log: str) -> dict:
     mode=exact 时 hits 含 solution;mode=fuzzy 时仅候选(需人工判断)。
     elapsed_ms 为本次检索的纯后端耗时(不含网络/序列化),单位毫秒。
 
-    优先走 SQLite + FTS5 索引(模糊召回更准、文档多时更快);索引不可用
-    (如 sqlite 未编译 FTS5)时,自动回退到下面的纯文件扫描,保证零依赖可用。
+    优先走 search_index 当前配置的后端(SQLite 或 MySQL);索引不可用时自动回退到
+    下面的纯文件扫描,保证默认 SQLite 场景仍可零外部数据库运行。
     """
     res = search_index.backend.search(log)
     if res is not None:
@@ -160,7 +160,7 @@ def main():
     arg = sys.argv[1] if len(sys.argv) > 1 else "-"
     log = sys.stdin.read() if arg == "-" else arg
     if not log.strip():
-        sys.exit("用法: python query.py \"报错信息\"  (或用 - 从 stdin 读)")
+        sys.exit("用法: python scripts/knowledge_base/query.py \"报错信息\"  (或用 - 从 stdin 读)")
     if not load_cases():
         sys.exit("wiki/cases/ 下暂无任何案例。")
 
@@ -184,7 +184,7 @@ def main():
         lines.extend(["", "建议:用上面案例的 signatures 反向核对你的报错,或接入 QMD 语义检索。"])
         logger.info("\n".join(lines))
     else:
-        logger.info("知识库中暂无相关案例。请勿编造解决方案;排查后可用 scripts/ingest.py 把本次结论入库。")
+        logger.info("知识库中暂无相关案例。请勿编造解决方案;排查后可用 scripts/knowledge_base/ingest.py 把本次结论入库。")
 
 
 def _indent(text: str, n: int = 2) -> str:

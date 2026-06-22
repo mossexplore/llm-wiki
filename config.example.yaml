@@ -14,3 +14,14 @@ chat:
   base_url: "https://api.openai.com/v1"   # 不填则继承 openai.base_url
   model: "gpt-4o-mini"                   # 对话用模型
   thinking: true                         # 是否启用 Think/Thinking 模式;默认 true,设为 false 可降低首字等待
+
+# storage 段:检索索引与对话运行数据的存储后端。默认 sqlite,不需要 MySQL 可保持不改。
+storage:
+  backend: "sqlite"                       # sqlite | mysql
+  mysql:
+    host: "127.0.0.1"
+    port: 3306
+    user: "log_wiki"
+    password: "请改成本地 MySQL 密码"
+    database: "log_wiki"
+    charset: "utf8mb4"

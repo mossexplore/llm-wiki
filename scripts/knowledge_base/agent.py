@@ -22,14 +22,12 @@ from __future__ import annotations
 import os, re, sys, pathlib, logging
 
 try:
-    import query
-    import ingest
+    from . import query, ingest
 except ImportError:
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-    import query
-    import ingest
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+    from knowledge_base import query, ingest
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 CASES_DIR = ROOT / "wiki" / "cases"
 logger = logging.getLogger("log_wiki.agent")
 

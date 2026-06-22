@@ -16,7 +16,7 @@ from ..schemas import CommitBatchReq, CommitReq, PreviewBatchReq, PreviewReq
 from ..search_sync import index_case_file
 from ..utils import ndjson
 
-import ingest  # noqa: E402
+from knowledge_base import ingest  # noqa: E402
 
 router = APIRouter()
 

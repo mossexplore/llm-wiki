@@ -13,9 +13,9 @@ ingest.py — LLM Wiki 入库辅助管线
     用户确认后才写入 wiki/cases/ 下的 verified 案例。
 
 用法:
-    python ingest.py raw_note.txt              # --id 缺省,用时间戳自动命名
-    python ingest.py raw_note.txt --id INC-1234  # 也可手动指定(如有工单号)
-    cat note.txt | python ingest.py -
+    python scripts/knowledge_base/ingest.py raw_note.txt              # --id 缺省,用时间戳自动命名
+    python scripts/knowledge_base/ingest.py raw_note.txt --id INC-1234  # 也可手动指定(如有工单号)
+    cat note.txt | python scripts/knowledge_base/ingest.py -
 
 依赖: pip install pyyaml openai
 配置: config.yaml / config.example.yaml 提供本地样例;也可用 INGEST_CONFIG 指定其它路径。
@@ -23,7 +23,7 @@ ingest.py — LLM Wiki 入库辅助管线
 import os, sys, json, re, argparse, datetime, logging, pathlib, yaml
 from openai import OpenAI
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent  # log-wiki/
+ROOT = pathlib.Path(__file__).resolve().parents[2]  # log-wiki/
 RAW_DIR = ROOT / "raw" / "sources"
 DRAFTS_DIR = ROOT / "wiki" / "cases" / "_drafts"
 WIKI_DIR = ROOT / "wiki"

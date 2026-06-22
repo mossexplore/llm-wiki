@@ -4,24 +4,25 @@
 
 ## 1. 设计定位:索引是派生的,Markdown 才是权威源
 
-- 知识的唯一权威源始终是 `wiki/cases/*.md`(OKF 不可变 / 可复核的 Markdown)。
+- 知识的唯一权威源始终是 `wiki/cases/*.md`(已复核 / 可回溯的 Markdown)。
 - 本索引库**完全由 Markdown 文件回灌而来**,可随时整库重建,丢了也不影响知识本身。
-- 入库 / 更新 / 删除知识时,后端([server/server.py](../server/server.py))会**自动同步**索引;服务启动时还会整库重建一次,保证与磁盘一致。
+- 入库 / 更新 / 删除知识时,后端([backend/server.py](../backend/server.py))会**自动同步**索引;服务启动时还会整库重建一次,保证与磁盘一致。
 - `signatures` 的**精确命中**(子串匹配)仍在应用层做,优先级最高,是"无命中门控"的依据,**不**交给全文检索的相关度排序。
 
 ```
-wiki/cases/*.md  ──(回灌/同步)──▶  index/search.db  ──(检索)──▶  query.search()
+wiki/cases/*.md  ──(回灌/同步)──▶  SQLite/MySQL 索引  ──(检索)──▶  query.search()
    权威源                              派生索引(可重建)
 ```
 
-## 2. 当前实现:SQLite + FTS5(trigram)
+## 2. 当前实现:默认 SQLite,可配置 MySQL
 
-- **本地文件库**:`index/search.db`(已 gitignore,不入库)。零网络、零费用,契合"检索不依赖外部网络"的护栏。
-- **语法与 Cloudflare D1 一致**:后期要上 D1 几乎零改动。
-- **中文检索**:用 FTS5 的 `trigram` 分词器(3 字滑窗),中英文混排都能子串匹配,无需额外分词插件。
+- **默认 SQLite 文件库**:`index/search.db`(已 gitignore,不入库)。零网络、零费用,契合"检索不依赖外部网络"的护栏。
+- **可选 MySQL**:把 `config.yaml` 中 `storage.backend` 改为 `mysql` 并填写 `storage.mysql` 后,使用 MySQL FULLTEXT 索引。
+- **SQLite 中文检索**:用 FTS5 的 `trigram` 分词器(3 字滑窗),中英文混排都能子串匹配,无需额外分词插件。
   - ⚠️ trigram 下查询词需 **≥ 3 个字符**;2 字中文(如"内存")要靠更长的上下文片段命中。
+- **MySQL 中文检索**:DDL 使用 `WITH PARSER ngram`,要求 MySQL 5.7+ / 8.0 的 ngram parser 可用。
 
-建表 DDL:[db/schema.sqlite.sql](schema.sqlite.sql)。后端首次连接时会自动执行(`CREATE TABLE IF NOT EXISTS ...`),无需手工建库。
+建表 DDL:[schema.sqlite.sql](schema.sqlite.sql) / [schema.mysql.sql](schema.mysql.sql)。后端首次连接时会自动执行(`CREATE TABLE IF NOT EXISTS ...`),无需手工建表。
 
 ## 3. 表结构
 
@@ -31,7 +32,7 @@ wiki/cases/*.md  ──(回灌/同步)──▶  index/search.db  ──(检索)
 | `case_signatures` | 精确命中专用,一条 signature 一行;应用层判断"signature 是否作为子串出现在用户日志里"。 |
 | `cases_fts` | FTS5 虚拟表,模糊召回用;`rowid` 与 `cases.rowid` 一一对应,`bm25()` 排序。 |
 
-字段明细见 [schema.sqlite.sql](schema.sqlite.sql) 注释。
+字段明细见 [schema.sqlite.sql](schema.sqlite.sql) 与 [schema.mysql.sql](schema.mysql.sql) 注释。
 
 ## 4. 如何从表中查询数据
 
@@ -43,7 +44,7 @@ python scripts/search_index.py stats          # 查看案例数 / signature 数 
 python scripts/search_index.py search "把整段报错粘进来"   # 走完整检索(精确→模糊→门控)
 ```
 
-### 4.2 直接用 sqlite3 查(排障 / 验证用)
+### 4.2 直接查 SQLite(排障 / 验证用)
 
 ```bash
 sqlite3 index/search.db
@@ -74,7 +75,36 @@ ORDER BY score ASC;
 > MATCH 查询要把任意文本拆成"加引号的短语"再用 `OR` 连接,直接喂整段日志会触发 FTS5 语法错误。
 > 后端 `search_index._fts_query()` 已自动完成这一步(抽取 ≥3 字符的英文词 / 数字码 / 中文片段)。
 
-### 4.3 代码里调用(推荐)
+### 4.3 MySQL 配置示例
+
+```yaml
+storage:
+  backend: "mysql"
+  mysql:
+    host: "127.0.0.1"
+    port: 3306
+    user: "log_wiki"
+    password: "your-password"
+    database: "log_wiki"
+    charset: "utf8mb4"
+```
+
+也可以用环境变量覆盖:`LOG_WIKI_STORAGE_BACKEND`、`LOG_WIKI_MYSQL_HOST`、`LOG_WIKI_MYSQL_PORT`、`LOG_WIKI_MYSQL_USER`、`LOG_WIKI_MYSQL_PASSWORD`、`LOG_WIKI_MYSQL_DATABASE`、`LOG_WIKI_MYSQL_CHARSET`。
+
+MySQL 模糊召回使用 `MATCH ... AGAINST`:
+
+```sql
+SELECT id, title, file,
+       MATCH(title, signatures_text, components, background, diagnosis, solution)
+       AGAINST('HikariPool request timed out' IN NATURAL LANGUAGE MODE) AS score
+FROM cases
+WHERE MATCH(title, signatures_text, components, background, diagnosis, solution)
+      AGAINST('HikariPool request timed out' IN NATURAL LANGUAGE MODE)
+ORDER BY score DESC
+LIMIT 5;
+```
+
+### 4.4 代码里调用(推荐)
 
 ```python
 import search_index
@@ -82,15 +112,16 @@ search_index.backend.search("把整段报错粘进来")
 # -> {"mode": "exact"|"fuzzy"|"none", "hits": [...], "elapsed_ms": 3}
 ```
 
-后端 `/api/query` 即走这条路;FTS5 不可用时 `query.py` 会自动回退到纯文件扫描,功能不变、只是慢一点。
+后端 `/api/query` 即走这条路;默认 SQLite 且 FTS5 不可用时 `query.py` 会自动回退到纯文件扫描,功能不变、只是慢一点。
 
-## 5. 后期迁移
+## 5. 存储选择
 
-检索被封装在 `SearchBackend` 接口([scripts/search_index.py](../scripts/search_index.py))后面,换库只需新增一个实现类,`query.py` / `server.py` 调用面不变。
+检索被封装在 `SearchBackend` 接口([scripts/search_index.py](../scripts/search_index.py))后面,`query.py` / `backend/server.py` 调用面不变。对话数据由 [scripts/chat_store.py](../scripts/chat_store.py) 做同样的分发。
 
 | 目标 | 改动 | 说明 |
 | --- | --- | --- |
-| **Cloudflare D1** | 几乎为零 | D1 就是 SQLite,FTS5 + trigram 同样支持;主要是把"本地文件连接"换成"D1 HTTP/Workers 绑定"。注意 D1 是远程库,会引入网络依赖。 |
-| **MySQL** | 重写全文检索一层 | 业务表与 `case_signatures` 不变;`FTS5 + MATCH + bm25()` 换成 `FULLTEXT + MATCH ... AGAINST`,中文**必须**用 `WITH PARSER ngram`。DDL 见 [schema.mysql.sql](schema.mysql.sql)。 |
+| **SQLite** | 默认 | 本地文件、零外部依赖;检索索引在 `index/search.db`,对话数据在 `db/chat.db`。 |
+| **MySQL** | 配置切换 | 检索索引用 `FULLTEXT + MATCH ... AGAINST`,中文用 `WITH PARSER ngram`;对话数据使用 `schema.chat.mysql.sql`。 |
+| **Cloudflare D1** | 后续扩展 | D1 是远程 SQLite;可沿用大部分 schema,但需要把本地文件连接换成 D1 HTTP/Workers 绑定。 |
 
 无论换哪个库,`signatures` 精确命中都继续留在应用层,不随后端改变。
