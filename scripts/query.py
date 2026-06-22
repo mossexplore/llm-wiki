@@ -15,7 +15,7 @@ query.py — 用一段日志报错,从 wiki/cases/ 里找相似案例
 import sys, re, pathlib, time, logging
 
 try:
-    import search_index            # 与本文件同目录(server.py 已把 scripts/ 加入 sys.path)
+    import search_index            # 与本文件同目录(backend/config.py 已把 scripts/ 加入 sys.path)
 except ImportError:                # 直接 `python scripts/query.py` 时补一下路径
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     import search_index

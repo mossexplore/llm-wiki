@@ -5,13 +5,13 @@ search_index.py — 检索索引后端（阶段 1：SQLite + FTS5 trigram）
 定位与护栏
   - wiki/cases/*.md 永远是知识的权威源(OKF 不可变层);本模块维护的 SQLite 库只是
     「派生索引」,用于把「模糊召回」从全量读文件 + token 交集,升级成 BM25 全文检索。
-  - 入库/更新/删除知识时由后端(server.py)同步本索引;索引可随时从文件整库重建。
+  - 入库/更新/删除知识时由后端(backend/server.py)同步本索引;索引可随时从文件整库重建。
   - signatures「精确命中」仍在应用层做子串匹配(见 search()),它是检索命门 + 无命中门控
     的依据,优先级最高,不交给全文检索的相关度排序。
 
 为什么是「接口 + 实现」
   现在用本地 SQLite(零网络、零费用,契合现有护栏),语法与 Cloudflare D1 一致;
-  后期要换 D1 / MySQL 时,只需新增一个实现类,query.py / server.py 调用面不变。
+  后期要换 D1 / MySQL 时,只需新增一个实现类,query.py / backend/server.py 调用面不变。
   迁移要点见 db/README.md 与 db/schema.mysql.sql。
 
 可单独运行(便于排障):
@@ -306,7 +306,7 @@ def _fts_query(log: str) -> str:
     return " OR ".join(out)
 
 
-# 模块级单例,供 query.py / server.py 复用
+# 模块级单例,供 query.py / backend/server.py 复用
 backend: SearchBackend = SqliteSearch()
 
 

@@ -17,3 +17,6 @@ config.yaml
 
 # 本地运行日志
 logs/
+
+# 本地临时文档
+docs/

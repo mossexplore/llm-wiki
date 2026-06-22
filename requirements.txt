@@ -3,6 +3,6 @@
 pyyaml>=6.0            # frontmatter 序列化(scripts/ingest.py)
 openai>=1.0           # OpenAI SDK,call_llm() 的结构化抽取
 
-# Web 服务(server/server.py);纯命令行用 ingest.py/query.py 时可不装
+# Web 服务(backend/server.py);纯命令行用 ingest.py/query.py 时可不装
 fastapi>=0.110
 uvicorn>=0.27
