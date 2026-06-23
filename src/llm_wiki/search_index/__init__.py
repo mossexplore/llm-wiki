@@ -28,7 +28,7 @@ def make_backend() -> SearchBackend:
     return SqliteSearch()
 
 
-# 模块级单例,供 query.py / backend/server.py 复用
+# 模块级单例,供 query.py / llm_wiki.backend.server 复用
 backend: SearchBackend = make_backend()
 
 
