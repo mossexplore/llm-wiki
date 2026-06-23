@@ -7,7 +7,7 @@
 --     用于后续的对话质量分析、知识盲区发现(点踩原因)、答案来源统计(wiki vs 大模型)。
 --
 -- 运行库默认在 db/chat.db（被 .gitignore 的 *.db 规则忽略，不入库，避免泄露对话内容）。
--- 后端 scripts/chat_store.py 首次连接时自动执行本 DDL（CREATE TABLE IF NOT EXISTS ...）。
+-- 后端 llm_wiki.chat_store 首次连接时自动执行本 DDL（CREATE TABLE IF NOT EXISTS ...）。
 --
 -- 适用：SQLite 3.x。使用 MySQL 后端时见 db/schema.chat.mysql.sql。
 -- =============================================================================

@@ -39,9 +39,9 @@ wiki/cases/*.md  ──(回灌/同步)──▶  SQLite/MySQL 索引  ──(检
 ### 4.1 整库重建 / 查看状态(命令行)
 
 ```bash
-python scripts/search_index.py reindex        # 从 wiki/cases/ 整库重建索引
-python scripts/search_index.py stats          # 查看案例数 / signature 数 / FTS 可用性
-python scripts/search_index.py search "把整段报错粘进来"   # 走完整检索(精确→模糊→门控)
+python -m llm_wiki.search_index reindex        # 从 wiki/cases/ 整库重建索引
+python -m llm_wiki.search_index stats          # 查看案例数 / signature 数 / FTS 可用性
+python -m llm_wiki.search_index search "把整段报错粘进来"   # 走完整检索(精确→模糊→门控)
 ```
 
 ### 4.2 直接查 SQLite(排障 / 验证用)
@@ -107,7 +107,7 @@ LIMIT 5;
 ### 4.4 代码里调用(推荐)
 
 ```python
-import search_index
+from llm_wiki import search_index
 search_index.backend.search("把整段报错粘进来")
 # -> {"mode": "exact"|"fuzzy"|"none", "hits": [...], "elapsed_ms": 3}
 ```
@@ -116,7 +116,7 @@ search_index.backend.search("把整段报错粘进来")
 
 ## 5. 存储选择
 
-检索被封装在 `SearchBackend` 接口([scripts/search_index.py](../scripts/search_index.py))后面,`query.py` / `backend/server.py` 调用面不变。对话数据由 [scripts/chat_store.py](../scripts/chat_store.py) 做同样的分发。
+检索被封装在 `SearchBackend` 接口([src/llm_wiki/search_index](../src/llm_wiki/search_index))后面,`llm_wiki.knowledge.query` / `llm_wiki.backend.server` 调用面不变。对话数据由 [src/llm_wiki/chat_store](../src/llm_wiki/chat_store) 做同样的分发。
 
 | 目标 | 改动 | 说明 |
 | --- | --- | --- |

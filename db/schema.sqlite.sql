@@ -4,7 +4,7 @@
 -- 角色定位：本库是「派生索引」，不是真理之源。
 --   - 知识的权威源始终是 wiki/cases/*.md（已复核 / 可回溯的 Markdown）。
 --   - 本库由 Markdown 文件回灌而来，用于「快速模糊检索」，可随时整库重建。
---   - 入库 / 更新 / 删除知识时，由后端同步维护本库（见 scripts/search_index.py）。
+--   - 入库 / 更新 / 删除知识时，由后端同步维护本库（见 llm_wiki.search_index）。
 --
 -- 为什么用 SQLite：本地零依赖、零网络、毫秒级，契合「检索不依赖外部网络」的护栏；
 -- 语法与 Cloudflare D1 一致；使用 MySQL 后端时见 db/schema.mysql.sql。

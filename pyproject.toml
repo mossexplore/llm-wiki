@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-wiki"
+version = "0.1.0"
+description = "A lightweight incident knowledge base with Markdown-first storage, full-text search, and RAG chat."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110",
+  "openai>=1.0",
+  "pydantic>=2.0",
+  "PyMySQL>=1.1",
+  "pyyaml>=6.0",
+  "SQLAlchemy>=2.0",
+  "uvicorn>=0.27",
+]
+
+[project.scripts]
+llm-wiki-chat-store = "llm_wiki.chat_store:main"
+llm-wiki-ingest = "llm_wiki.knowledge.ingest:main"
+llm-wiki-lint-okf = "llm_wiki.knowledge.lint_okf:main"
+llm-wiki-query = "llm_wiki.knowledge.query:main"
+llm-wiki-search = "llm_wiki.search_index:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
