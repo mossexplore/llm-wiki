@@ -37,9 +37,12 @@ def get_mysql_client():
 
 
 def get_mysql_label() -> str:
-    """Return a password-free MySQL label for logs and stats output."""
-    cfg = storage_config.mysql_config()
-    return f"mysql://{cfg['user']}@{cfg['host']}:{cfg['port']}/{cfg['database']}"
+    """Return a fixed, non-sensitive MySQL label for logs/stats.
+
+    不暴露任何连接信息(user/host/port/database 都是凭据或网络坐标,不应随
+    日志或 stats 输出泄漏),统一返回固定占位串。
+    """
+    return "mysql error"
 
 
 def _sql_text(statement: str):
