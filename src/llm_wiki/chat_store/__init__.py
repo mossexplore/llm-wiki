@@ -41,12 +41,12 @@ def create_session(title: str = "新会话", user_id: str | None = None,
     return _backend().create_session(title, user_id, source_code)
 
 
-def list_sessions() -> list:
-    return _backend().list_sessions()
+def list_sessions(user_id: str | None = None) -> list:
+    return _backend().list_sessions(user_id)
 
 
-def session_exists(session_id: str) -> bool:
-    return _backend().session_exists(session_id)
+def session_exists(session_id: str, user_id: str | None = None) -> bool:
+    return _backend().session_exists(session_id, user_id)
 
 
 def has_messages(session_id: str) -> bool:
@@ -57,12 +57,12 @@ def rename_session(session_id: str, title: str) -> None:
     _backend().rename_session(session_id, title)
 
 
-def delete_session(session_id: str) -> bool:
-    return _backend().delete_session(session_id)
+def delete_session(session_id: str, user_id: str | None = None) -> bool:
+    return _backend().delete_session(session_id, user_id)
 
 
-def clear_sessions() -> dict:
-    return _backend().clear_sessions()
+def clear_sessions(user_id: str | None = None) -> dict:
+    return _backend().clear_sessions(user_id)
 
 
 def add_message(session_id: str, role: str, content: str,
@@ -74,8 +74,8 @@ def get_messages(session_id: str) -> list:
     return _backend().get_messages(session_id)
 
 
-def message_exists(message_id: str) -> dict | None:
-    return _backend().message_exists(message_id)
+def message_exists(message_id: str, user_id: str | None = None) -> dict | None:
+    return _backend().message_exists(message_id, user_id)
 
 
 def set_feedback(message_id: str, session_id: str, rating: str, reason: str | None = None,

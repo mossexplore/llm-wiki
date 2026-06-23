@@ -86,6 +86,16 @@ def test_list_sessions_orders_by_updated_desc_with_counts(monkeypatch):
     assert by_id[a["id"]]["message_count"] == 0
 
 
+def test_list_sessions_filtered_by_user():
+    store.create_session("u1-a", user_id="u1")
+    store.create_session("u2-a", user_id="u2")
+    store.create_session("anon")               # 无 user_id
+    u1 = store.list_sessions(user_id="u1")
+    assert [s["title"] for s in u1] == ["u1-a"]
+    assert all(s["user_id"] == "u1" for s in u1)
+    assert len(store.list_sessions()) == 3     # 不传 user_id 返回全部
+
+
 def test_rename_session():
     s = store.create_session()
     store.rename_session(s["id"], "新名字")
@@ -118,6 +128,42 @@ def test_delete_session_removes_messages_and_feedback():
     assert store.delete_session(s["id"]) is True
     assert store.delete_session(s["id"]) is False
     assert store.get_messages(s["id"]) == []
+
+
+def test_session_exists_scoped_by_user():
+    s = store.create_session("s", user_id="u1")
+    assert store.session_exists(s["id"]) is True                 # 不传 user_id:存在即真
+    assert store.session_exists(s["id"], user_id="u1") is True    # 归属匹配
+    assert store.session_exists(s["id"], user_id="u2") is False   # 非归属视为不存在
+
+
+def test_delete_session_scoped_by_user():
+    s = store.create_session("s", user_id="u1")
+    store.add_message(s["id"], "user", "q")
+    assert store.delete_session(s["id"], user_id="u2") is False   # 别人删不掉
+    assert len(store.get_messages(s["id"])) == 1                  # 消息也没被误删
+    assert store.delete_session(s["id"], user_id="u1") is True    # 本人可删
+    assert store.get_messages(s["id"]) == []
+
+
+def test_message_exists_scoped_by_user():
+    s = store.create_session("s", user_id="u1")
+    m = store.add_message(s["id"], "assistant", "a", user_id="u1")
+    assert store.message_exists(m["id"], user_id="u1")["role"] == "assistant"
+    assert store.message_exists(m["id"], user_id="u2") is None    # 非归属视为不存在
+
+
+def test_clear_sessions_by_user_only_removes_that_user():
+    s1 = store.create_session("u1", user_id="u1")
+    store.add_message(s1["id"], "assistant", "a")
+    store.set_feedback(store.get_messages(s1["id"])[0]["id"], s1["id"], "up")
+    s2 = store.create_session("u2", user_id="u2")
+    store.add_message(s2["id"], "user", "q")
+
+    deleted = store.clear_sessions(user_id="u1")
+    assert deleted == {"sessions": 1, "messages": 1, "feedback": 1}
+    assert [s["id"] for s in store.list_sessions()] == [s2["id"]]
+    assert len(store.get_messages(s2["id"])) == 1
 
 
 def test_clear_sessions_returns_counts():

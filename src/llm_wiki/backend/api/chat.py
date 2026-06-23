@@ -1,5 +1,6 @@
 import time
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -32,30 +33,38 @@ def chat_create_session(req: SessionCreateReq):
 
 
 @router.get("/api/chat/sessions")
-def chat_list_sessions():
-    return success({"items": chat_store.list_sessions()})
+def chat_list_sessions(user_id: Optional[str] = None):
+    """列出会话;传入 user_id(查询参数)时只返回该用户的会话,不传则返回全部。"""
+    user_id = (user_id or "").strip() or None
+    return success({"items": chat_store.list_sessions(user_id=user_id)})
 
 
 @router.delete("/api/chat/sessions")
-def chat_clear_sessions():
-    deleted = chat_store.clear_sessions()
+def chat_clear_sessions(user_id: Optional[str] = None):
+    """清空会话;传入 user_id(查询参数)时只清该用户的会话,不传则清空全部。"""
+    user_id = (user_id or "").strip() or None
+    deleted = chat_store.clear_sessions(user_id=user_id)
     logger.info(
-        "chat.sessions.clear sessions=%s messages=%s feedback=%s",
-        deleted["sessions"], deleted["messages"], deleted["feedback"],
+        "chat.sessions.clear user_id=%s sessions=%s messages=%s feedback=%s",
+        user_id or "*", deleted["sessions"], deleted["messages"], deleted["feedback"],
     )
     return success({"ok": True, "deleted": deleted})
 
 
 @router.get("/api/chat/sessions/{session_id}/messages")
-def chat_get_messages(session_id: str):
-    if not chat_store.session_exists(session_id):
+def chat_get_messages(session_id: str, user_id: Optional[str] = None):
+    """读会话消息;传 user_id(查询参数)时要求会话归属该用户,否则按不存在处理。"""
+    user_id = (user_id or "").strip() or None
+    if not chat_store.session_exists(session_id, user_id=user_id):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
     return success({"items": chat_store.get_messages(session_id)})
 
 
 @router.delete("/api/chat/sessions/{session_id}")
-def chat_delete_session(session_id: str):
-    ok = chat_store.delete_session(session_id)
+def chat_delete_session(session_id: str, user_id: Optional[str] = None):
+    """删会话;传 user_id(查询参数)时只删归属该用户的会话,否则按不存在处理。"""
+    user_id = (user_id or "").strip() or None
+    ok = chat_store.delete_session(session_id, user_id=user_id)
     if not ok:
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
     return success({"ok": True})
@@ -67,11 +76,11 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
     text = (req.content or "").strip()
     if not text:
         raise_api_error(ErrorCode.CHAT_MESSAGE_EMPTY)
-    if not chat_store.session_exists(session_id):
+    user_id = (req.user_id or "").strip() or None
+    if not chat_store.session_exists(session_id, user_id=user_id):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
 
     has_history = chat_store.has_messages(session_id)
-    user_id = (req.user_id or "").strip() or None
     chat_store.add_message(session_id, "user", text, user_id=user_id)
     if not has_history:
         try:
@@ -225,7 +234,8 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 def chat_feedback(message_id: str, req: FeedbackReq):
     if req.rating not in ("up", "down"):
         raise_api_error(ErrorCode.CHAT_FEEDBACK_INVALID_RATING)
-    msg = chat_store.message_exists(message_id)
+    req_user_id = (req.user_id or "").strip() or None
+    msg = chat_store.message_exists(message_id, user_id=req_user_id)   # 传 user_id 时要求消息归属该用户
     if not msg:
         raise_api_error(ErrorCode.CHAT_MESSAGE_NOT_FOUND)
     if msg["role"] != "assistant":
@@ -233,5 +243,5 @@ def chat_feedback(message_id: str, req: FeedbackReq):
     reason = (req.reason or "").strip() or None
     if req.rating == "down" and not reason:
         raise_api_error(ErrorCode.CHAT_FEEDBACK_REASON_REQUIRED)
-    user_id = (req.user_id or "").strip() or msg.get("user_id")
+    user_id = req_user_id or msg.get("user_id")
     return success(chat_store.set_feedback(message_id, msg["session_id"], req.rating, reason, user_id))

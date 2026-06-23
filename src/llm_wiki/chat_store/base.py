@@ -50,18 +50,26 @@ class BaseChatStore:
         return {"id": sid, "user_id": user_id, "source_code": source_code, "title": title,
                 "created_at": ts, "updated_at": ts, "message_count": 0}
 
-    def list_sessions(self) -> list:
+    def list_sessions(self, user_id: str | None = None) -> list:
+        """列出会话(按活跃倒序);传入 user_id 时只返回该用户的会话。"""
+        where = "WHERE s.user_id = :user_id" if user_id else ""
         with self._tx() as c:
             return c.all(
-                """SELECT s.id, s.user_id, s.source_code, s.title, s.created_at, s.updated_at,
+                f"""SELECT s.id, s.user_id, s.source_code, s.title, s.created_at, s.updated_at,
                           (SELECT count(*) FROM t_chat_messages m WHERE m.session_id = s.id) AS message_count
                    FROM t_chat_sessions s
-                   ORDER BY s.updated_at DESC"""
+                   {where}
+                   ORDER BY s.updated_at DESC""",
+                {"user_id": user_id} if user_id else None,
             )
 
-    def session_exists(self, session_id: str) -> bool:
+    def session_exists(self, session_id: str, user_id: str | None = None) -> bool:
+        """会话是否存在;传 user_id 时还要求归属该用户(否则视为不存在)。"""
         with self._tx() as c:
-            return c.one("SELECT 1 AS x FROM t_chat_sessions WHERE id=:sid", {"sid": session_id}) is not None
+            return c.one(
+                "SELECT 1 AS x FROM t_chat_sessions WHERE id=:sid AND (:uid IS NULL OR user_id=:uid)",
+                {"sid": session_id, "uid": user_id},
+            ) is not None
 
     def has_messages(self, session_id: str) -> bool:
         with self._tx() as c:
@@ -73,23 +81,37 @@ class BaseChatStore:
             c.run("UPDATE t_chat_sessions SET title=:title, updated_at=:ts WHERE id=:sid",
                   {"title": title, "ts": now(), "sid": session_id})
 
-    def delete_session(self, session_id: str) -> bool:
+    def delete_session(self, session_id: str, user_id: str | None = None) -> bool:
+        """删会话;传 user_id 时只删归属该用户的会话。仅在会话确被删除时级联消息/反馈。"""
         with self._tx() as c:
-            deleted = c.run("DELETE FROM t_chat_sessions WHERE id=:sid", {"sid": session_id}) > 0
-            c.run("DELETE FROM t_chat_messages WHERE session_id=:sid", {"sid": session_id})
-            c.run("DELETE FROM t_chat_feedbacks WHERE session_id=:sid", {"sid": session_id})
+            deleted = c.run(
+                "DELETE FROM t_chat_sessions WHERE id=:sid AND (:uid IS NULL OR user_id=:uid)",
+                {"sid": session_id, "uid": user_id},
+            ) > 0
+            if deleted:   # 未删到(不存在或不归属)就不动其消息/反馈
+                c.run("DELETE FROM t_chat_messages WHERE session_id=:sid", {"sid": session_id})
+                c.run("DELETE FROM t_chat_feedbacks WHERE session_id=:sid", {"sid": session_id})
         return deleted
 
-    def clear_sessions(self) -> dict:
+    def clear_sessions(self, user_id: str | None = None) -> dict:
+        """清空会话/消息/反馈;传入 user_id 时只清该用户名下的会话及其消息与反馈。
+
+        消息与反馈按「会话归属」级联(session_id 属于该用户的会话),而非按各自的
+        user_id —— 删一个用户的会话就要带走该会话里的全部内容。
+        """
+        owned = "WHERE session_id IN (SELECT id FROM t_chat_sessions WHERE user_id = :user_id)" if user_id else ""
+        sess_where = "WHERE user_id = :user_id" if user_id else ""
+        params = {"user_id": user_id} if user_id else None
         with self._tx() as c:
             counts = {
-                "sessions": c.one("SELECT count(*) AS n FROM t_chat_sessions")["n"],
-                "messages": c.one("SELECT count(*) AS n FROM t_chat_messages")["n"],
-                "feedback": c.one("SELECT count(*) AS n FROM t_chat_feedbacks")["n"],
+                "sessions": c.one(f"SELECT count(*) AS n FROM t_chat_sessions {sess_where}", params)["n"],
+                "messages": c.one(f"SELECT count(*) AS n FROM t_chat_messages {owned}", params)["n"],
+                "feedback": c.one(f"SELECT count(*) AS n FROM t_chat_feedbacks {owned}", params)["n"],
             }
-            c.run("DELETE FROM t_chat_feedbacks")
-            c.run("DELETE FROM t_chat_messages")
-            c.run("DELETE FROM t_chat_sessions")
+            # 先删消息/反馈(子查询依赖会话还在),最后删会话。
+            c.run(f"DELETE FROM t_chat_feedbacks {owned}", params)
+            c.run(f"DELETE FROM t_chat_messages {owned}", params)
+            c.run(f"DELETE FROM t_chat_sessions {sess_where}", params)
         return counts
 
     # --- 消息 ---------------------------------------------------------------
@@ -138,10 +160,14 @@ class BaseChatStore:
             d["refs"] = json.loads(d["refs"]) if d.get("refs") else []
         return rows
 
-    def message_exists(self, message_id: str) -> dict | None:
+    def message_exists(self, message_id: str, user_id: str | None = None) -> dict | None:
+        """取消息基本信息;传 user_id 时还要求归属该用户(否则视为不存在)。"""
         with self._tx() as c:
-            return c.one("SELECT id, session_id, user_id, role FROM t_chat_messages WHERE id=:mid",
-                         {"mid": message_id})
+            return c.one(
+                "SELECT id, session_id, user_id, role FROM t_chat_messages "
+                "WHERE id=:mid AND (:uid IS NULL OR user_id=:uid)",
+                {"mid": message_id, "uid": user_id},
+            )
 
     # --- 反馈 ---------------------------------------------------------------
     def set_feedback(self, message_id: str, session_id: str, rating: str,
