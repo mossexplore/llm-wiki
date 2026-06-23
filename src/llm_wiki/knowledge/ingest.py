@@ -20,9 +20,20 @@ ingest.py — LLM Wiki 入库辅助管线
 依赖: pip install pyyaml openai
 配置: config.yaml / config.example.yaml 提供本地样例;也可用 INGEST_CONFIG 指定其它路径。
 """
-import os, sys, json, re, argparse, datetime, logging, pathlib, yaml
+import argparse
+import datetime
+import json
+import logging
+import os
+import pathlib
+import re
+import sys
+import threading
+
+import yaml
 from openai import OpenAI
 
+from llm_wiki.common.markdown_case import normalize_json_text, read_doc
 from llm_wiki.common.paths import CONFIG_PATH, ROOT
 
 RAW_DIR = ROOT / "raw" / "sources"
@@ -50,9 +61,13 @@ EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原
 
 
 _clients: dict = {}    # section -> (OpenAI client, model, config_key);按配置段缓存,配置变化时自动刷新
+_clients_lock = threading.Lock()    # 批量预览用线程池并发取 client,_clients 读写需加锁
+
+_config_cache = None   # (mtime, data):按文件 mtime 缓存解析结果,避免每次请求都读盘+解析 YAML
+_config_lock = threading.Lock()
 
 
-def _description(c: dict) -> str:
+def case_description(c: dict) -> str:
     desc = (c.get("description") or "").strip()
     if desc:
         return desc
@@ -63,10 +78,11 @@ def _description(c: dict) -> str:
     return c.get("title", "")
 
 
-def _tags(c: dict) -> list:
-    tags = c.get("tags") or []
-    if isinstance(tags, str):
-        tags = [tags]
+def case_tags(c: dict) -> list:
+    raw = c.get("tags") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    tags = list(raw)            # 复制,避免就地 append 修改调用方传入的列表
     category = c.get("category")
     if category:
         tags.append(category)
@@ -91,36 +107,51 @@ def load_config(section: str = "openai") -> dict:
     缺失时抛 RuntimeError(普通异常,便于 Web 端 except Exception 捕获并流式回传);
     CLI 侧在 main() 里把它转成友好退出。
     """
-    if not CONFIG_PATH.exists():
-        raise RuntimeError(f"缺少配置文件 {CONFIG_PATH};请复制 config.example.yaml 为 config.yaml 并填写。")
-    data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
-    env = data.get("env", "dev")
-    if env == "dev":
-        os.environ["NO_PROXY"] = "127.0.0.1"
+    data = _load_config_data()
     cfg = dict(data.get("openai") or {})
     if section != "openai":
         override = data.get(section) or {}
         cfg.update({k: v for k, v in override.items() if v not in (None, "")})
     if not cfg.get("api_key"):
         raise RuntimeError(f"配置文件 {CONFIG_PATH} 缺少 {section}.api_key(或 openai.api_key)。")
-    logger.info(
-        "ingest.config.loaded section=%s env=%s config_path=%s base_url=%s model=%s no_proxy=%s",
-        section, env, CONFIG_PATH, cfg.get("base_url") or "<default>",
-        cfg.get("model", "gpt-4o"), os.environ.get("NO_PROXY", ""),
-    )
     return cfg
 
 
+def _load_config_data() -> dict:
+    """读取并缓存 config.yaml 的解析结果;按文件 mtime 失效,改配置无需重启即可生效。
+
+    每次请求都重读+解析 YAML 是无谓开销;这里只在文件变更时重载一次。重载发生在锁内,
+    并把「dev 环境设 NO_PROXY」这类一次性副作用收敛到此处,避免在每次配置读取时反复改全局环境。
+    """
+    global _config_cache
+    if not CONFIG_PATH.exists():
+        raise RuntimeError(f"缺少配置文件 {CONFIG_PATH};请复制 config.example.yaml 为 config.yaml 并填写。")
+    mtime = CONFIG_PATH.stat().st_mtime
+    with _config_lock:
+        if _config_cache is None or _config_cache[0] != mtime:
+            data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+            env = data.get("env", "dev")
+            if env == "dev":
+                os.environ["NO_PROXY"] = "127.0.0.1"
+            logger.info(
+                "ingest.config.loaded env=%s config_path=%s no_proxy=%s",
+                env, CONFIG_PATH, os.environ.get("NO_PROXY", ""),
+            )
+            _config_cache = (mtime, data)
+        return _config_cache[1]
+
+
 def _client_and_model(section: str = "openai"):
-    """懒加载 OpenAI 客户端;按配置段缓存,配置变化时自动刷新。"""
+    """懒加载 OpenAI 客户端;按配置段缓存,配置变化时自动刷新。线程安全。"""
     cfg = load_config(section)
     model = cfg.get("model", "gpt-4o")
     config_key = (cfg.get("api_key"), cfg.get("base_url") or None, model)
-    cached = _clients.get(section)
-    if not cached or cached[2] != config_key:
-        client = OpenAI(api_key=cfg["api_key"], base_url=cfg.get("base_url") or None)
-        _clients[section] = (client, model, config_key)
-    client, model, _ = _clients[section]
+    with _clients_lock:
+        cached = _clients.get(section)
+        if not cached or cached[2] != config_key:
+            client = OpenAI(api_key=cfg["api_key"], base_url=cfg.get("base_url") or None)
+            _clients[section] = (client, model, config_key)
+        client, model, _ = _clients[section]
     return client, model
 
 
@@ -172,8 +203,7 @@ def archive_raw(raw: str, ident: str) -> pathlib.Path:
 
 def extract(raw: str) -> dict:
     # 走流式累加(与 Web 单条预览同一通路;部分网关只在 stream=True 时返回正常 choices)
-    text = "".join(stream_llm(EXTRACT_PROMPT.format(raw=raw))).strip()
-    text = re.sub(r"^```json|```$", "", text, flags=re.M).strip()
+    text = normalize_json_text("".join(stream_llm(EXTRACT_PROMPT.format(raw=raw))))
     if not text:
         raise RuntimeError("模型返回为空")
     data = json.loads(text)
@@ -196,9 +226,9 @@ def to_markdown(c: dict, raw_rel: str, status: str = "draft",
         "id": slugify(c["title"]),
         "type": c.get("type", "Incident Case"),
         "title": c["title"],
-        "description": _description(c),
+        "description": case_description(c),
         "category": c.get("category", "未分类"),
-        "tags": _tags(c),
+        "tags": case_tags(c),
         "status": status,                        # CLI 默认 draft;web 端复核确认后传 verified
         "confidence": confidence,
         "signatures": c.get("signatures", []),
@@ -218,19 +248,8 @@ def to_markdown(c: dict, raw_rel: str, status: str = "draft",
     return f"---\n{front}---\n\n{body}"
 
 
-def _read_frontmatter(path: pathlib.Path) -> dict:
-    text = path.read_text(encoding="utf-8")
-    if not text.startswith("---"):
-        return {}
-    try:
-        _, fm, _ = text.split("---", 2)
-    except ValueError:
-        return {}
-    return yaml.safe_load(fm) or {}
-
-
 def _index_entry(path: pathlib.Path, base: pathlib.Path) -> str:
-    fm = _read_frontmatter(path)
+    fm, _ = read_doc(path)
     title = fm.get("title") or path.stem
     description = fm.get("description") or fm.get("category") or fm.get("type") or ""
     rel = path.relative_to(base).as_posix()

@@ -19,8 +19,12 @@ agent.py — 对话 Agent 的「先检索、后生成」编排层(RAG)
   - CHAT_SYSTEM_PROMPT    未命中、纯大模型兜底时的系统提示词。
 """
 from __future__ import annotations
-import os, re, logging
 
+import logging
+import os
+import time
+
+from llm_wiki.common.markdown_case import read_doc, section
 from llm_wiki.common.paths import ROOT
 
 from . import ingest, query
@@ -50,11 +54,6 @@ DEFAULT_CHAT_PROMPT = (
 CHAT_SYSTEM_PROMPT = os.environ.get("CHAT_SYSTEM_PROMPT") or DEFAULT_CHAT_PROMPT
 
 
-def _section(body: str, title: str) -> str:
-    m = re.search(rf"##\s*{re.escape(title)}\s*\n(.*?)(?=\n##\s|\Z)", body, re.S)
-    return m.group(1).strip() if m else ""
-
-
 def _case_context(file_rel: str) -> dict | None:
     """读 wiki/cases/<file>,取标题与各正文段落,作为 RAG 上下文。"""
     path = (ROOT / file_rel).resolve()
@@ -64,18 +63,13 @@ def _case_context(file_rel: str) -> dict | None:
         return None
     if not path.exists():
         return None
-    text = path.read_text(encoding="utf-8")
-    title = path.stem
-    m = re.search(r"^title:[ \t]*(.+)$", text, re.M)
-    if m:
-        title = m.group(1).strip().strip('"\'')
-    body = text.split("---", 2)[-1] if text.startswith("---") else text
+    fm, body = read_doc(path)
     return {
-        "title": title,
+        "title": fm.get("title") or path.stem,
         "file": file_rel,
-        "background": _section(body, "问题背景"),
-        "diagnosis": _section(body, "定位过程"),
-        "solution": _section(body, "解决方案"),
+        "background": section(body, "问题背景"),
+        "diagnosis": section(body, "定位过程"),
+        "solution": section(body, "解决方案"),
     }
 
 
@@ -184,7 +178,6 @@ def build_answer_messages(text: str, history: list | None, decision: dict) -> li
 
 def stream_messages(messages):
     """统一的大模型流式调用:逐段 yield 文本增量。对话用 config.yaml 的 chat 段(可与写入不同)。"""
-    import time
     client, model = ingest._client_and_model("chat")
     thinking_enabled = _chat_thinking_enabled()
     stats = message_stats(messages)

@@ -1,10 +1,9 @@
 import pathlib
 
-from .config import ROOT  # noqa: F401
-
 from llm_wiki import search_index
 
 from .app_logging import logger
+from .config import ROOT  # noqa: F401
 
 
 def index_case_file(case_path: pathlib.Path) -> None:

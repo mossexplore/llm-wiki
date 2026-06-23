@@ -16,10 +16,14 @@ import json
 import logging
 import sys
 
-from .common import SearchBackend, case_from_file, logger
+from llm_wiki.common import storage_config
+
+from .common import SearchBackend, case_from_file, exact_signatures, logger
 from .mysql_backend import MySQLSearch
 from .sqlite_backend import SqliteSearch
-from llm_wiki.common import storage_config
+
+# case_from_file / exact_signatures 在此聚合再导出,供 query.py、search_sync 复用。
+__all__ = ["SearchBackend", "case_from_file", "exact_signatures", "logger", "backend", "make_backend"]
 
 
 def make_backend() -> SearchBackend:

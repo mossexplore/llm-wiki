@@ -1,11 +1,6 @@
-# log-wiki 依赖
-# 安装: pip install -r requirements.txt
-pyyaml>=6.0            # frontmatter 序列化(llm_wiki.knowledge.ingest)
-openai>=1.0           # OpenAI SDK,call_llm() 的结构化抽取
-SQLAlchemy>=2.0       # MySQL 存储后端连接池、事务与 SQL 执行
-PyMySQL>=1.1          # SQLAlchemy 的 mysql+pymysql 驱动;默认 SQLite 不连接 MySQL
-
-# Web 服务(llm_wiki.backend.server);纯命令行用 llm_wiki.knowledge.ingest/query 时可不装
-fastapi>=0.110
-pydantic>=2.0
-uvicorn>=0.27
+# 依赖以 pyproject.toml 为单一来源,避免两份清单漂移。
+# 运行依赖:
+#   pip install -e .
+# 含测试 / lint 的开发依赖:
+#   pip install -e ".[dev]"
+-e .

@@ -2,34 +2,19 @@ import datetime
 import pathlib
 import re
 
+import yaml
 from fastapi import APIRouter
-import yaml  # noqa: E402
+
+from llm_wiki.common.markdown_case import read_doc as split_case
+from llm_wiki.common.markdown_case import section
+from llm_wiki.knowledge import ingest
 
 from ..config import CASES_DIR, ROOT
 from ..error_codes import ErrorCode, raise_api_error
 from ..schemas import KnowledgeUpdateReq
 from ..search_sync import index_case_file, index_remove
 
-from llm_wiki.knowledge import ingest  # noqa: E402
-
 router = APIRouter()
-
-
-def split_case(path: pathlib.Path) -> tuple[dict, str]:
-    text = path.read_text(encoding="utf-8")
-    if not text.startswith("---"):
-        return {}, text
-    try:
-        _, fm, body = text.split("---", 2)
-    except ValueError:
-        return {}, text
-    return yaml.safe_load(fm) or {}, body
-
-
-def section(body: str, title: str) -> str:
-    pattern = rf"##\s*{re.escape(title)}\s*\n(.*?)(?=\n##\s|\Z)"
-    m = re.search(pattern, body, re.S)
-    return m.group(1).strip() if m else ""
 
 
 def replace_section(body: str, title: str, content: str) -> str:
@@ -99,9 +84,9 @@ def knowledge_markdown(req: KnowledgeUpdateReq, existing: dict, existing_body: s
         "id": existing.get("id") or ingest.slugify(req.title),
         "type": existing.get("type", "Incident Case"),
         "title": req.title,
-        "description": ingest._description(case),
+        "description": ingest.case_description(case),
         "category": req.category or "未分类",
-        "tags": ingest._tags(case),
+        "tags": ingest.case_tags(case),
         "status": "verified",
         "confidence": existing.get("confidence", "high"),
         "signatures": req.signatures,

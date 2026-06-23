@@ -2,14 +2,13 @@
 """MySQL FULLTEXT 检索索引后端。"""
 from __future__ import annotations
 
-import re
-
 from llm_wiki.common.mysql_client import (
     _sql_text,
     get_mysql_client,
     get_mysql_label,
     run_mysql_schema,
 )
+
 from .common import (
     CASES_DIR,
     MYSQL_SCHEMA_PATH,
@@ -17,6 +16,10 @@ from .common import (
     annotate,
     case_from_file,
     done,
+    exact_signatures,
+    is_cjk,
+    iter_search_tokens,
+    logger,
 )
 
 
@@ -31,10 +34,20 @@ class MySQLSearch(SearchBackend):
         run_mysql_schema(conn, MYSQL_SCHEMA_PATH)
 
     def available(self) -> bool:
-        if self._ok is None:
+        """探测 MySQL 是否可用并确保建表。
+
+        失败时返回 False(而非抛异常),让 query.search() 能回退到文件扫描;
+        且不缓存 False —— 数据库恢复后下次调用会重试,避免一次抖动永久禁用检索。
+        """
+        if self._ok:
+            return True
+        try:
             with get_mysql_client().begin() as conn:
                 self._init_schema(conn)
-                self._ok = True
+            self._ok = True
+        except Exception:
+            logger.exception("search_index mysql backend unavailable, fallback to file scan")
+            self._ok = False
         return self._ok
 
     def _upsert(self, conn, case: dict) -> None:
@@ -69,7 +82,7 @@ class MySQLSearch(SearchBackend):
                  background=VALUES(background), diagnosis=VALUES(diagnosis),
                  solution=VALUES(solution), updated_at=VALUES(updated_at)"""
         ), params)
-        for s in sigs:
+        for s in exact_signatures(sigs):
             conn.execute(
                 _sql_text("INSERT INTO t_case_signatures(case_id, signature) VALUES(:case_id,:signature)"),
                 {"case_id": cid, "signature": s},
@@ -119,12 +132,17 @@ class MySQLSearch(SearchBackend):
         self.ensure_built()
         log_low = log.lower()
         with get_mysql_client().begin() as conn:
-            sig_rows = conn.execute(_sql_text("SELECT case_id, signature FROM t_case_signatures")).mappings().all()
+            # 子串判断下推到 MySQL(LOCATE),避免每次查询把整张 signature 表拉回应用层。
+            sig_rows = conn.execute(
+                _sql_text(
+                    "SELECT case_id, signature FROM t_case_signatures "
+                    "WHERE LOCATE(LOWER(signature), :log) > 0"
+                ),
+                {"log": log_low},
+            ).mappings().all()
             matched: dict[str, list] = {}
             for row in sig_rows:
-                sig = row["signature"]
-                if sig and sig.lower() in log_low:
-                    matched.setdefault(row["case_id"], []).append(sig)
+                matched.setdefault(row["case_id"], []).append(row["signature"])
             if matched:
                 hits = []
                 for cid, sigs in matched.items():
@@ -181,11 +199,8 @@ class MySQLSearch(SearchBackend):
 def mysql_query(log: str) -> str:
     """把日志文本压缩成 MySQL FULLTEXT 自然语言查询文本。"""
     terms = []
-    for tok in re.findall(r"[A-Za-z]{3,}|\d{3,}|[一-鿿]+", log):
-        if "一" <= tok[0] <= "鿿":
-            terms.append(tok[:120])
-        else:
-            terms.append(tok)
+    for tok in iter_search_tokens(log):
+        terms.append(tok[:120] if is_cjk(tok) else tok)
         if len(terms) >= 80:
             break
     return " ".join(dict.fromkeys(terms))

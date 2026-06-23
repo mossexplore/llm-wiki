@@ -13,55 +13,35 @@ query.py — 用一段日志报错,从 wiki/cases/ 里找相似案例
     python -m llm_wiki.knowledge.query "把整段报错粘进来"
     cat error.log | python -m llm_wiki.knowledge.query -
 """
-import sys, re, time, logging
+import logging
+import re
+import sys
+import time
 
 from llm_wiki import search_index
+from llm_wiki.common.markdown_case import annotate, read_doc, section
 from llm_wiki.common.paths import ROOT
 
 CASES_DIR = ROOT / "wiki" / "cases"
 logger = logging.getLogger("log_wiki.query")
 
 
-def _strip_comment(v: str) -> str:
-    """去掉行内 YAML 注释( 空格+# 起)与首尾引号。"""
-    return re.sub(r"\s+#.*$", "", v).strip().strip('"\'')
-
-
-def _scalar(fm: str, key: str, default: str) -> str:
-    """从 frontmatter 取一个标量字段(容忍行内注释)。"""
-    m = re.search(rf"^{key}:[ \t]*(.+)$", fm, re.M)
-    return _strip_comment(m.group(1)) if m else default
-
-
-def _signatures(fm: str) -> list:
-    """取 signatures 列表项:`signatures:`(可带行内注释)之后、下一个顶层 key 之前的 `- ...` 行。
-
-    终止符用"下一个映射 key"(^\\w...:),而非"下一个非空行"——因为 PyYAML 生成的
-    列表项是顶格的 `- item`,用非空行会被误当成边界,导致 signatures 解析为空。
-    手写(缩进 `  - "..."`)与机器生成(顶格 `- item`)两种格式都能正确解析。
-    """
-    m = re.search(r"^signatures:[ \t]*(?:#[^\n]*)?\n(.*?)(?=^\w[\w-]*:|\Z)",
-                  fm + "\n_end:", re.M | re.S)
-    if not m:
-        return []
-    return [_strip_comment(s)
-            for s in re.findall(r"^\s*-\s*(.+)$", m.group(1), re.M)]
-
-
 def load_cases():
-    """读取 wiki/cases/ 下所有案例(含 _drafts/),解析 frontmatter + 正文。零依赖。"""
+    """读取 wiki/cases/ 下所有案例(含 _drafts/),解析 frontmatter + 正文。"""
     cases = []
     for path in sorted(CASES_DIR.rglob("*.md")):
-        text = path.read_text(encoding="utf-8")
-        if not text.startswith("---"):
+        fm, body = read_doc(path)
+        if not fm:
             continue
-        _, fm, body = text.split("---", 2)
+        sigs = fm.get("signatures") or []
+        if isinstance(sigs, str):
+            sigs = [sigs]
         cases.append({
             "path": path,
-            "title": _scalar(fm, "title", path.stem),
-            "status": _scalar(fm, "status", "unknown"),
-            "confidence": _scalar(fm, "confidence", "unknown"),
-            "signatures": _signatures(fm),
+            "title": fm.get("title") or path.stem,
+            "status": fm.get("status") or "unknown",
+            "confidence": fm.get("confidence") or "unknown",
+            "signatures": [str(s).strip() for s in sigs if str(s).strip()],
             "body": body,
         })
     return cases
@@ -69,25 +49,12 @@ def load_cases():
 
 def solution_of(body: str) -> str:
     """抽取「解决方案」段落(到下一个 ## 或文末)。"""
-    m = re.search(r"##\s*解决方案\s*\n(.*?)(?=\n##\s|\Z)", body, re.S)
-    return m.group(1).strip() if m else "(该案例无「解决方案」段落)"
+    return section(body, "解决方案") or "(该案例无「解决方案」段落)"
 
 
 def tokenize(s: str):
     """切出英文单词(>=4 字母)与数字错误码,小写,用于模糊重合度。"""
     return {t.lower() for t in re.findall(r"[A-Za-z]{4,}|\b\d{3}\b", s)}
-
-
-def annotate(c) -> str:
-    """按 status/confidence 给可信度标注。"""
-    notes = []
-    if c["status"] == "draft":
-        notes.append("⚠ 该案例尚未复核(draft),仅供参考")
-    elif c["status"] == "verified":
-        notes.append("✓ 已复核(verified)")
-    if c["confidence"] in ("low", "medium"):
-        notes.append(f"置信度 {c['confidence']},建议结合实际验证")
-    return " | ".join(notes)
 
 
 def search(log: str) -> dict:
@@ -120,7 +87,7 @@ def _search_files(log: str) -> dict:
     # 1) 精确命中:signature 作为子串出现在日志里
     exact = []
     for c in cases:
-        matched = [s for s in c["signatures"] if s and s.lower() in log_low]
+        matched = [s for s in search_index.exact_signatures(c["signatures"]) if s.lower() in log_low]
         if matched:
             exact.append({
                 "title": c["title"],
@@ -128,7 +95,7 @@ def _search_files(log: str) -> dict:
                 "matched": matched,
                 "status": c["status"],
                 "confidence": c["confidence"],
-                "note": annotate(c),
+                "note": annotate(c["status"], c["confidence"]),
                 "solution": solution_of(c["body"]),
             })
     if exact:

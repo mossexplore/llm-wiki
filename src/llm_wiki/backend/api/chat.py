@@ -4,13 +4,14 @@ import uuid
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from llm_wiki import chat_store
+from llm_wiki.chat_store import MessageMetrics
+from llm_wiki.knowledge import agent  # noqa: E402
+
 from ..app_logging import logger
-from ..error_codes import ErrorCode, raise_api_error
+from ..error_codes import ErrorCode, raise_api_error, stream_error_text
 from ..schemas import ChatMessageReq, FeedbackReq, SessionCreateReq
 from ..utils import ndjson
-
-from llm_wiki import chat_store
-from llm_wiki.knowledge import agent  # noqa: E402
 
 router = APIRouter()
 
@@ -156,15 +157,17 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 model_wait_ms = total_ms - model_request_start_ms
             saved = chat_store.add_message(
                 session_id, "assistant", acc,
-                answer_source=source, retrieval_mode=mode, refs=refs,
-                elapsed_ms=total_ms,
-                retrieval_ms=retrieval_ms,
-                model_wait_ms=model_wait_ms,
-                first_delta_ms=first_delta_ms,
-                total_ms=total_ms,
-                message_count=prompt_stats["message_count"],
-                prompt_chars=prompt_stats["char_count"],
-                history_messages=prompt_stats["history_messages"],
+                MessageMetrics(
+                    answer_source=source, retrieval_mode=mode, refs=refs,
+                    elapsed_ms=total_ms,
+                    retrieval_ms=retrieval_ms,
+                    model_wait_ms=model_wait_ms,
+                    first_delta_ms=first_delta_ms,
+                    total_ms=total_ms,
+                    message_count=prompt_stats["message_count"],
+                    prompt_chars=prompt_stats["char_count"],
+                    history_messages=prompt_stats["history_messages"],
+                ),
                 user_id=user_id,
             )
             yield ndjson({
@@ -180,29 +183,35 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 "history_messages": prompt_stats["history_messages"],
             })
             logger.info(
-                "chat.send.done session_id=%s request_id=%s source=%s mode=%s chars=%s retrieval_ms=%s model_wait_ms=%s first_delta_ms=%s total_ms=%s",
+                "chat.send.done session_id=%s request_id=%s source=%s mode=%s chars=%s "
+                "retrieval_ms=%s model_wait_ms=%s first_delta_ms=%s total_ms=%s",
                 session_id, request_id, source, mode, len(acc), retrieval_ms, model_wait_ms,
                 first_delta_ms, total_ms,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("chat.send.error session_id=%s request_id=%s", session_id, request_id)
             if acc.strip():
                 try:
                     chat_store.add_message(
                         session_id, "assistant", acc,
-                        answer_source=source, retrieval_mode=mode, refs=refs,
-                        retrieval_ms=retrieval_ms,
-                        model_wait_ms=model_wait_ms,
-                        first_delta_ms=first_delta_ms,
-                        total_ms=int((time.perf_counter() - started) * 1000),
-                        message_count=prompt_stats.get("message_count"),
-                        prompt_chars=prompt_stats.get("char_count"),
-                        history_messages=prompt_stats.get("history_messages"),
+                        MessageMetrics(
+                            answer_source=source, retrieval_mode=mode, refs=refs,
+                            retrieval_ms=retrieval_ms,
+                            model_wait_ms=model_wait_ms,
+                            first_delta_ms=first_delta_ms,
+                            total_ms=int((time.perf_counter() - started) * 1000),
+                            message_count=prompt_stats.get("message_count"),
+                            prompt_chars=prompt_stats.get("char_count"),
+                            history_messages=prompt_stats.get("history_messages"),
+                        ),
                         user_id=user_id,
                     )
                 except Exception:
                     logger.exception("chat persist partial answer failed")
-            yield ndjson({"type": "error", "request_id": request_id, "error": str(e)})
+            yield ndjson({
+                "type": "error", "request_id": request_id,
+                "code": ErrorCode.INTERNAL_ERROR.code, "error": stream_error_text(request_id),
+            })
 
     return StreamingResponse(
         gen(),

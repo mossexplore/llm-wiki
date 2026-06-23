@@ -2,11 +2,11 @@ import datetime
 
 from fastapi import APIRouter
 
+from llm_wiki.knowledge import query  # noqa: E402
+
 from ..config import ROOT  # noqa: F401
 from ..error_codes import ErrorCode, raise_api_error
 from ..schemas import QueryReq
-
-from llm_wiki.knowledge import query  # noqa: E402
 
 router = APIRouter()
 

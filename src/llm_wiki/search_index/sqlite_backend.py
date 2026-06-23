@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pathlib
-import re
 import sqlite3
 
 from .common import (
@@ -14,6 +13,9 @@ from .common import (
     annotate,
     case_from_file,
     done,
+    exact_signatures,
+    is_cjk,
+    iter_search_tokens,
 )
 
 
@@ -71,7 +73,7 @@ class SqliteSearch(SearchBackend):
             "INSERT INTO t_cases_fts(rowid, title, signatures_text, components, body) VALUES(?,?,?,?,?)",
             (rid, case.get("title", ""), "\n".join(sigs), "\n".join(comps), body),
         )
-        for s in sigs:
+        for s in exact_signatures(sigs):
             conn.execute("INSERT INTO t_case_signatures(case_id, signature) VALUES(?,?)", (cid, s))
 
     def index_case(self, case: dict) -> None:
@@ -141,11 +143,15 @@ class SqliteSearch(SearchBackend):
         log_low = log.lower()
         conn = self._connect()
         try:
-            sig_rows = conn.execute("SELECT case_id, signature FROM t_case_signatures").fetchall()
+            # 子串判断下推到 SQLite(instr),不再把整张 signature 表搬进 Python。
+            # 两侧都小写以保持与历史一致的「忽略大小写」精确命中(ASCII 折叠为主)。
+            sig_rows = conn.execute(
+                "SELECT case_id, signature FROM t_case_signatures WHERE instr(?, lower(signature)) > 0",
+                (log_low,),
+            ).fetchall()
             matched: dict[str, list] = {}
             for cid, sig in sig_rows:
-                if sig and sig.lower() in log_low:
-                    matched.setdefault(cid, []).append(sig)
+                matched.setdefault(cid, []).append(sig)
             if matched:
                 hits = []
                 for cid, sigs in matched.items():
@@ -205,8 +211,8 @@ class SqliteSearch(SearchBackend):
 def fts_query(log: str) -> str:
     """把任意日志文本转成安全的 FTS5 MATCH 查询。"""
     terms = []
-    for tok in re.findall(r"[A-Za-z]{3,}|\d{3,}|[一-鿿]+", log):
-        if "一" <= tok[0] <= "鿿":
+    for tok in iter_search_tokens(log):
+        if is_cjk(tok):
             if len(tok) < 3:
                 continue
             terms.extend(tok[i:i + 3] for i in range(len(tok) - 2))

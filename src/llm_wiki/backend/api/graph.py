@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
-from ..config import ROOT  # noqa: F401
-
 from llm_wiki.knowledge import graph  # noqa: E402
+
+from ..config import ROOT  # noqa: F401
 
 router = APIRouter()
 

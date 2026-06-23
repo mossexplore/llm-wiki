@@ -5,19 +5,20 @@ import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Header
 from fastapi.responses import StreamingResponse
 
+from llm_wiki.common.markdown_case import normalize_json_text
+from llm_wiki.knowledge import ingest
+
 from ..app_logging import logger
 from ..config import ROOT
-from ..error_codes import ErrorCode, raise_api_error
+from ..error_codes import ErrorCode, raise_api_error, stream_error_text
 from ..schemas import CommitBatchReq, CommitReq, PreviewBatchReq, PreviewReq
 from ..search_sync import index_case_file
 from ..utils import ndjson
-
-from llm_wiki.knowledge import ingest  # noqa: E402
 
 router = APIRouter()
 
@@ -37,7 +38,10 @@ SAMPLE_CASE = {
     "components": ["order-service", "HikariCP", "MySQL"],
     "background": "大促高峰期 order-service 接口批量返回 500,DB CPU 不高但活跃连接顶满 maximumPoolSize 设为 20。",
     "diagnosis": "慢查询 getOrderDetail 平均 4.2s 长时间占用连接,连接池耗尽后续请求等待 30s 超时,HikariCP 抛 Connection is not available。",
-    "solution": "为 getOrderDetail 涉及字段加复合索引,查询从 4.2s 降至 60ms;maximumPoolSize 由 20 调至 40,并启用 HikariCP leakDetectionThreshold 连接泄漏检测,大促期间未再出现连接池耗尽。",
+    "solution": (
+        "为 getOrderDetail 涉及字段加复合索引,查询从 4.2s 降至 60ms;maximumPoolSize 由 20 调至 40,"
+        "并启用 HikariCP leakDetectionThreshold 连接泄漏检测,大促期间未再出现连接池耗尽。"
+    ),
 }
 
 
@@ -68,13 +72,13 @@ def ingest_preview(req: PreviewReq, x_request_id: Optional[str] = Header(default
                 request_id, chunk_count, char_count,
                 int((time.perf_counter() - started) * 1000),
             )
-        except Exception as e:
+        except Exception:
             logger.exception(
                 "ingest.preview.error request_id=%s chunks=%s chars=%s elapsed_ms=%s",
                 request_id, chunk_count, char_count,
                 int((time.perf_counter() - started) * 1000),
             )
-            yield f"\n[ERROR][request_id={request_id}] {e}"
+            yield f"\n[ERROR] {stream_error_text(request_id)}"
 
     return StreamingResponse(
         gen(),
@@ -90,26 +94,15 @@ def ingest_commit(req: CommitReq):
     if not req.signatures:
         raise_api_error(ErrorCode.INGEST_SIGNATURES_EMPTY)
 
-    ident = req.ident or datetime.datetime.now().strftime("%H%M%S")
-    raw_path = ingest.archive_raw(req.raw, ident)
-    raw_rel = str(raw_path.relative_to(ROOT))
-
-    md = ingest.to_markdown(req.model_dump(), raw_rel, status="verified", confidence="high")
-    slug = ingest.slugify(req.title)
-    case_path = ROOT / "wiki" / "cases" / f"{slug}.md"
-    case_path.write_text(md, encoding="utf-8")
+    # 复用 commit_one 的 slug 去重:同标题不再静默覆盖已有案例,而是追加 -2/-3 后缀。
+    res = commit_one(req, set())
     ingest.update_indexes()
-    index_case_file(case_path)
+    index_case_file(ROOT / res["case_file"])
 
-    return {
-        "ok": True,
-        "raw_file": raw_rel,
-        "case_file": str(case_path.relative_to(ROOT)),
-        "slug": slug,
-    }
+    return {"ok": True, **res}
 
 
-def split_records(raw: str) -> List[str]:
+def split_records(raw: str) -> list[str]:
     """按 Markdown 一级标题切分多条原始记录,去空白。"""
     raw = raw.replace("\r\n", "\n").replace("\r", "\n")
     matches = list(re.finditer(r"(?m)^#[ \t]+.+$", raw))
@@ -140,18 +133,6 @@ def commit_one(req: CommitReq, used_slugs: set) -> dict:
     case_path = ROOT / "wiki" / "cases" / f"{slug}.md"
     case_path.write_text(md, encoding="utf-8")
     return {"case_file": str(case_path.relative_to(ROOT)), "raw_file": raw_rel, "slug": slug}
-
-
-def normalize_json_text(text: str) -> str:
-    txt = (text or "").strip()
-    txt = re.sub(r"^```(?:json)?\s*", "", txt, flags=re.I).strip()
-    txt = re.sub(r"```\s*$", "", txt).strip()
-    if not txt.startswith("{"):
-        first = txt.find("{")
-        last = txt.rfind("}")
-        if first != -1 and last > first:
-            txt = txt[first:last + 1].strip()
-    return txt
 
 
 def batch_case_record(index: int, raw: str, case: dict) -> dict:
@@ -194,12 +175,15 @@ def ingest_preview_batch(req: PreviewBatchReq):
                 "ingest.preview_batch.item.done request_id=%s index=%s chunks=%s chars=%s elapsed_ms=%s",
                 request_id, i, chunk_count, len(acc), int((time.perf_counter() - started) * 1000),
             )
-        except Exception as e:
+        except Exception:
             logger.exception(
                 "ingest.preview_batch.item.error request_id=%s index=%s chunks=%s chars=%s elapsed_ms=%s",
                 request_id, i, chunk_count, len(acc), int((time.perf_counter() - started) * 1000),
             )
-            out.put({"type": "error", "request_id": request_id, "index": i, "raw": rec, "error": str(e)})
+            out.put({
+                "type": "error", "request_id": request_id, "index": i, "raw": rec,
+                "code": ErrorCode.INTERNAL_ERROR.code, "error": stream_error_text(request_id),
+            })
         finally:
             out.put({"type": "finished", "request_id": request_id, "index": i})
 
@@ -257,8 +241,9 @@ def ingest_commit_batch(req: CommitBatchReq):
             res = commit_one(rec, used)
             index_case_file(ROOT / res["case_file"])
             results.append({"index": i, "ok": True, **res})
-        except Exception as e:
-            results.append({"index": i, "ok": False, "error": str(e)})
+        except Exception:
+            logger.exception("ingest.commit_batch.item.error index=%s title=%s", i, rec.title)
+            results.append({"index": i, "ok": False, "error": "入库失败"})
     ingest.update_indexes()
     return {"ok": sum(1 for r in results if r["ok"]), "total": len(results), "results": results}
 

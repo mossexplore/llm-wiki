@@ -7,21 +7,19 @@ llm-wiki Web 后端(FastAPI)
     uvicorn --app-dir src llm_wiki.backend.server:app --reload --port 8000
     # 浏览器打开 http://127.0.0.1:8000/
 """
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+
+from llm_wiki import search_index
+from llm_wiki.common import storage_config
 
 from .api import chat, graph, ingest, knowledge, search, static_pages
 from .app_logging import LOG_DIR, logger
 from .config import FRONTEND_DIR, ROOT
 from .middleware import request_logging_middleware
 
-from llm_wiki import search_index
-from llm_wiki.common import storage_config
 
-app = FastAPI(title="log-wiki")
-app.middleware("http")(request_logging_middleware)
-
-
-@app.on_event("startup")
 def build_search_index() -> None:
     """按配置决定启动时是否从 wiki/cases/ 整库重建检索索引。"""
     logger.info("server.startup log_dir=%s root=%s frontend=%s", LOG_DIR, ROOT, FRONTEND_DIR)
@@ -42,6 +40,16 @@ def build_search_index() -> None:
     except Exception:
         logger.exception("search_index startup reindex failed")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期:启动时按需重建检索索引(替代已弃用的 on_event）。"""
+    build_search_index()
+    yield
+
+
+app = FastAPI(title="llm-wiki", lifespan=lifespan)
+app.middleware("http")(request_logging_middleware)
 
 app.include_router(ingest.router)
 app.include_router(knowledge.router)

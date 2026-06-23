@@ -7,7 +7,21 @@ name = "llm-wiki"
 version = "0.1.0"
 description = "A lightweight incident knowledge base with Markdown-first storage, full-text search, and RAG chat."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "mossexplore", email = "lclidea@proton.me" }]
+keywords = ["knowledge-base", "rag", "full-text-search", "incident", "markdown"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Bug Tracking",
+]
 dependencies = [
   "fastapi>=0.110",
   "openai>=1.0",
@@ -17,6 +31,28 @@ dependencies = [
   "SQLAlchemy>=2.0",
   "uvicorn>=0.27",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mossexplore/llm-wiki"
+Repository = "https://github.com/mossexplore/llm-wiki"
+Issues = "https://github.com/mossexplore/llm-wiki/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 140
+src = ["src", "tests"]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+# E402: 部分模块为「先设路径/常量再 import 子模块」的有意写法
+ignore = ["E402"]
 
 [project.scripts]
 llm-wiki-chat-store = "llm_wiki.chat_store:main"

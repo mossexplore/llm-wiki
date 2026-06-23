@@ -5,8 +5,8 @@ import json
 import logging
 import pathlib
 import re
-import yaml
 
+from llm_wiki.common.markdown_case import read_doc
 from llm_wiki.common.paths import ROOT
 
 WIKI_DIR = ROOT / "wiki"
@@ -25,17 +25,6 @@ def as_list(value):
     if isinstance(value, list):
         return value
     return [value]
-
-
-def read_doc(path: pathlib.Path):
-    text = path.read_text(encoding="utf-8")
-    if not text.startswith("---"):
-        return {}, text
-    try:
-        _, fm, body = text.split("---", 2)
-    except ValueError:
-        return {}, text
-    return yaml.safe_load(fm) or {}, body
 
 
 def node_type(path: pathlib.Path, fm: dict) -> str:
@@ -131,7 +120,7 @@ def build_graph() -> dict:
             add_node(nodes, tid, "tag", tag)
             add_edge(edges, node_id, tid, "tagged")
 
-        for label, link in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", body):
+        for _label, link in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", body):
             target = normalize_repo_link(link, path)
             if target and target in nodes:
                 add_edge(edges, node_id, target, "links")

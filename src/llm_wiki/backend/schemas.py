@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -11,8 +11,8 @@ class CommitReq(BaseModel):
     raw: str
     title: str
     category: str = "未分类"
-    signatures: List[str] = Field(default_factory=list)
-    components: List[str] = Field(default_factory=list)
+    signatures: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
     background: str = ""
     diagnosis: str = ""
     solution: str = ""
@@ -23,8 +23,8 @@ class KnowledgeUpdateReq(BaseModel):
     raw: str = ""
     title: str
     category: str = "未分类"
-    signatures: List[str] = Field(default_factory=list)
-    components: List[str] = Field(default_factory=list)
+    signatures: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
     background: str = ""
     diagnosis: str = ""
     solution: str = ""
@@ -36,7 +36,7 @@ class PreviewBatchReq(BaseModel):
 
 
 class CommitBatchReq(BaseModel):
-    records: List[CommitReq]
+    records: list[CommitReq]
 
 
 class QueryReq(BaseModel):
