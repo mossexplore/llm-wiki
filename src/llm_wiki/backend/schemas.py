@@ -45,12 +45,16 @@ class QueryReq(BaseModel):
 
 class SessionCreateReq(BaseModel):
     title: Optional[str] = None
+    user_id: Optional[str] = None
+    source_code: Optional[str] = None
 
 
 class ChatMessageReq(BaseModel):
     content: str
+    user_id: Optional[str] = None
 
 
 class FeedbackReq(BaseModel):
     rating: str
     reason: Optional[str] = None
+    user_id: Optional[str] = None

@@ -13,10 +13,31 @@
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
+-- t_session_sources：会话来源字典表。
+-- code 是业务侧传入的来源编码；service 表示来源服务；scene 表示来源场景。
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS t_session_sources (
+  code        TEXT PRIMARY KEY,          -- 来源编码，如 web / api / cli
+  service     TEXT NOT NULL,             -- 来源服务，如 wiserec-wiki / openapi / wechat
+  scene       TEXT NOT NULL,             -- 来源场景，如 chat / embed / ops
+  description TEXT,                      -- 来源说明
+  enabled     INTEGER NOT NULL DEFAULT 1, -- 是否启用：1 启用，0 停用
+  created_at  TEXT NOT NULL,             -- ISO 时间，创建时刻
+  updated_at  TEXT NOT NULL              -- ISO 时间，更新时刻
+);
+INSERT OR IGNORE INTO t_session_sources
+  (code, service, scene, description, enabled, created_at, updated_at)
+VALUES
+  ('web', 'wiserec-wiki', 'chat', 'Web 页面聊天入口', 1,
+   strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
+
+-- ---------------------------------------------------------------------------
 -- t_chat_sessions：一行一个会话（左侧「新建聊天」对应一行）。
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS t_chat_sessions (
   id          TEXT PRIMARY KEY,          -- 会话 id（uuid）
+  user_id     TEXT,                      -- 用户 id，标识该会话归属的用户
+  source_code TEXT NOT NULL DEFAULT 'web', -- 会话来源编码，关联 t_session_sources.code
   title       TEXT NOT NULL DEFAULT '新会话',  -- 会话标题，默认取首条用户提问的前若干字
   created_at  TEXT NOT NULL,             -- ISO 时间，创建时刻
   updated_at  TEXT NOT NULL             -- ISO 时间，最后一条消息时刻，用于列表按活跃排序
@@ -30,6 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON t_chat_sessions(updated_
 CREATE TABLE IF NOT EXISTS t_chat_messages (
   id              TEXT PRIMARY KEY,      -- 消息 id（uuid），点赞点踩按此关联
   session_id      TEXT NOT NULL,         -- 关联 t_chat_sessions.id
+  user_id         TEXT,                  -- 用户 id，标识该消息归属的用户
   seq             INTEGER NOT NULL,      -- 会话内自增序号，保证严格有序（同一毫秒也不乱）
   role            TEXT NOT NULL,         -- 'user' | 'assistant'
   content         TEXT NOT NULL,         -- 消息正文（用户提问原文 / Agent 完整回复）
@@ -49,18 +71,19 @@ CREATE TABLE IF NOT EXISTS t_chat_messages (
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON t_chat_messages(session_id, seq);
 
 -- ---------------------------------------------------------------------------
--- t_chat_feedback：一行一条反馈（仅针对 assistant 消息）。
+-- t_chat_feedbacks：一行一条反馈（仅针对 assistant 消息）。
 -- 一条消息最多保留一条反馈（同一消息再次反馈 = 覆盖更新）。点踩必须带原因，
 -- 这些原因是发现「知识库盲区 / 答案不靠谱」的最直接运营信号。
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS t_chat_feedback (
+CREATE TABLE IF NOT EXISTS t_chat_feedbacks (
   id          TEXT PRIMARY KEY,          -- 反馈 id（uuid）
   message_id  TEXT NOT NULL UNIQUE,      -- 关联 t_chat_messages.id，一条消息一条反馈
   session_id  TEXT NOT NULL,             -- 冗余存一份，便于按会话聚合统计
+  user_id     TEXT,                      -- 用户 id，标识该反馈归属的用户
   rating      TEXT NOT NULL,             -- 'up'(点赞) | 'down'(点踩)
   reason      TEXT,                      -- 点踩原因（点赞时为空）
   created_at  TEXT NOT NULL,             -- ISO 时间
   updated_at  TEXT NOT NULL              -- ISO 时间，覆盖更新时刷新
 );
-CREATE INDEX IF NOT EXISTS idx_chat_feedback_rating ON t_chat_feedback(rating);
-CREATE INDEX IF NOT EXISTS idx_chat_feedback_session ON t_chat_feedback(session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_rating ON t_chat_feedbacks(rating);
+CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_session ON t_chat_feedbacks(session_id);

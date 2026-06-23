@@ -36,7 +36,7 @@ class SqliteSearch(SearchBackend):
         if self._ok is None:
             try:
                 c = sqlite3.connect(":memory:")
-                c.execute("CREATE VIRTUAL TABLE t USING fts5(x, tokenize='trigram')")
+                c.execute("CREATE VIRTUAL TABLE t_fts_probe USING fts5(probe_text, tokenize='trigram')")
                 c.close()
                 self._ok = True
             except Exception:

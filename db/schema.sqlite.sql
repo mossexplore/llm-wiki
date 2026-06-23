@@ -18,11 +18,11 @@
 -- 业务键 id = 案例文件名去掉 .md 的 slug（与后端写文件、删文件用的 key 一致）。
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS t_cases (
-  rowid            INTEGER PRIMARY KEY AUTOINCREMENT,
+  rowid            INTEGER PRIMARY KEY AUTOINCREMENT, -- 自增主键, 用于和 t_cases_fts.rowid 对齐
   id               TEXT    NOT NULL UNIQUE,   -- slug，= wiki/cases/<id>.md 的文件名主干
   file             TEXT    NOT NULL,          -- 相对仓库根的路径，如 wiki/cases/xxx.md
-  title            TEXT,
-  category         TEXT,
+  title            TEXT,                      -- 案例标题
+  category         TEXT,                      -- 案例类别, 如数据库/网络/训练卡住等
   status           TEXT,                      -- verified / draft
   confidence       TEXT,                      -- high / medium / low
   components       TEXT,                      -- 组件列表，以换行连接，仅供展示/调试
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS t_cases (
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS t_case_signatures (
   case_id    TEXT NOT NULL,                   -- 关联 t_cases.id
-  signature  TEXT NOT NULL
+  signature  TEXT NOT NULL                    -- 用于精确命中的原始错误特征文本
 );
 CREATE INDEX IF NOT EXISTS idx_case_signatures_case ON t_case_signatures(case_id);
 
@@ -51,9 +51,13 @@ CREATE INDEX IF NOT EXISTS idx_case_signatures_case ON t_case_signatures(case_id
 -- 注意：trigram 下「查询词」需 >= 3 个字符，2 字中文（如「内存」）需靠更长的上下文片段命中。
 -- ---------------------------------------------------------------------------
 CREATE VIRTUAL TABLE IF NOT EXISTS t_cases_fts USING fts5(
+  -- 案例标题, 参与模糊召回
   title,
+  -- signatures 汇总文本, 参与模糊召回
   signatures_text,
+  -- 相关组件文本, 参与模糊召回
   components,
+  -- background + diagnosis + solution 拼接正文, 参与模糊召回
   body,                                       -- background + diagnosis + solution 拼接
   tokenize = 'trigram'
 );

@@ -23,7 +23,9 @@ def session_title(text: str) -> str:
 
 @router.post("/api/chat/sessions")
 def chat_create_session(req: SessionCreateReq):
-    return chat_store.create_session(req.title or "新会话")
+    user_id = (req.user_id or "").strip() or None
+    source_code = (req.source_code or "").strip() or "web"
+    return chat_store.create_session(req.title or "新会话", user_id=user_id, source_code=source_code)
 
 
 @router.get("/api/chat/sessions")
@@ -66,7 +68,8 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
         raise HTTPException(404, "会话不存在")
 
     has_history = chat_store.has_messages(session_id)
-    chat_store.add_message(session_id, "user", text)
+    user_id = (req.user_id or "").strip() or None
+    chat_store.add_message(session_id, "user", text, user_id=user_id)
     if not has_history:
         try:
             chat_store.rename_session(session_id, session_title(text))
@@ -161,6 +164,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 message_count=prompt_stats["message_count"],
                 prompt_chars=prompt_stats["char_count"],
                 history_messages=prompt_stats["history_messages"],
+                user_id=user_id,
             )
             yield ndjson({
                 "type": "done", "request_id": request_id, "message_id": saved["id"],
@@ -193,6 +197,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                         message_count=prompt_stats.get("message_count"),
                         prompt_chars=prompt_stats.get("char_count"),
                         history_messages=prompt_stats.get("history_messages"),
+                        user_id=user_id,
                     )
                 except Exception:
                     logger.exception("chat persist partial answer failed")
@@ -217,4 +222,5 @@ def chat_feedback(message_id: str, req: FeedbackReq):
     reason = (req.reason or "").strip() or None
     if req.rating == "down" and not reason:
         raise HTTPException(400, "点踩请填写原因")
-    return chat_store.set_feedback(message_id, msg["session_id"], req.rating, reason)
+    user_id = (req.user_id or "").strip() or msg.get("user_id")
+    return chat_store.set_feedback(message_id, msg["session_id"], req.rating, reason, user_id)

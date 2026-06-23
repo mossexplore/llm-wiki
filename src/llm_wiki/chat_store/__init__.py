@@ -24,8 +24,9 @@ def _backend_module():
     return sqlite_store
 
 
-def create_session(title: str = "新会话") -> dict:
-    return _backend_module().create_session(title)
+def create_session(title: str = "新会话", user_id: str | None = None,
+                   source_code: str = "web") -> dict:
+    return _backend_module().create_session(title, user_id, source_code)
 
 
 def list_sessions() -> list[dict]:
@@ -58,11 +59,12 @@ def add_message(session_id: str, role: str, content: str,
                 retrieval_ms: int | None = None, model_wait_ms: int | None = None,
                 first_delta_ms: int | None = None, total_ms: int | None = None,
                 message_count: int | None = None, prompt_chars: int | None = None,
-                history_messages: int | None = None) -> dict:
+                history_messages: int | None = None,
+                user_id: str | None = None) -> dict:
     return _backend_module().add_message(
         session_id, role, content, answer_source, retrieval_mode, refs, elapsed_ms,
         retrieval_ms, model_wait_ms, first_delta_ms, total_ms, message_count,
-        prompt_chars, history_messages,
+        prompt_chars, history_messages, user_id,
     )
 
 
@@ -74,8 +76,9 @@ def message_exists(message_id: str) -> dict | None:
     return _backend_module().message_exists(message_id)
 
 
-def set_feedback(message_id: str, session_id: str, rating: str, reason: str | None = None) -> dict:
-    return _backend_module().set_feedback(message_id, session_id, rating, reason)
+def set_feedback(message_id: str, session_id: str, rating: str, reason: str | None = None,
+                 user_id: str | None = None) -> dict:
+    return _backend_module().set_feedback(message_id, session_id, rating, reason, user_id)
 
 
 def stats() -> dict:
