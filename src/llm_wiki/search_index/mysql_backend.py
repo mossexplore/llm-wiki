@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from llm_wiki.common import storage_config
+from llm_wiki.common.mysql_client import _sql_text, get_mysql_client
 from .common import (
     CASES_DIR,
     MYSQL_SCHEMA_PATH,
@@ -18,48 +19,32 @@ from .common import (
 class MySQLSearch(SearchBackend):
     def __init__(self):
         self._ok = None
-        self._engine = None
 
     def label(self) -> str:
         cfg = storage_config.mysql_config()
         return f"mysql://{cfg['user']}@{cfg['host']}:{cfg['port']}/{cfg['database']}"
 
-    def _sqlalchemy(self):
-        try:
-            from sqlalchemy import create_engine, text
-            return create_engine, text
-        except ImportError as exc:
-            raise RuntimeError("使用 MySQL 存储需安装 SQLAlchemy: pip install SQLAlchemy") from exc
-
-    def _engine_instance(self):
-        if self._engine is None:
-            create_engine, _ = self._sqlalchemy()
-            self._engine = create_engine(storage_config.mysql_sqlalchemy_url(), pool_pre_ping=True)
-        return self._engine
-
     def _init_schema(self, conn) -> None:
-        _, text = self._sqlalchemy()
         statements = [
             stmt.strip()
             for stmt in MYSQL_SCHEMA_PATH.read_text(encoding="utf-8").split(";")
             if stmt.strip()
         ]
         for stmt in statements:
-            conn.execute(text(stmt))
+            conn.execute(_sql_text(stmt))
 
     def available(self) -> bool:
         if self._ok is None:
-            with self._engine_instance().begin() as conn:
+            with get_mysql_client().begin() as conn:
                 self._init_schema(conn)
                 self._ok = True
         return self._ok
 
     def _upsert(self, conn, case: dict) -> None:
-        _, text = self._sqlalchemy()
         cid = case["id"]
         sigs = case.get("signatures") or []
         comps = case.get("components") or []
-        conn.execute(text("DELETE FROM t_case_signatures WHERE case_id=:case_id"), {"case_id": cid})
+        conn.execute(_sql_text("DELETE FROM t_case_signatures WHERE case_id=:case_id"), {"case_id": cid})
         params = {
             "id": cid,
             "file": case.get("file", ""),
@@ -74,7 +59,7 @@ class MySQLSearch(SearchBackend):
             "solution": case.get("solution", ""),
             "updated_at": case.get("updated_at", ""),
         }
-        conn.execute(text(
+        conn.execute(_sql_text(
             """INSERT INTO t_cases
                (id, file, title, category, status, confidence, components,
                 signatures_text, background, diagnosis, solution, updated_at)
@@ -89,31 +74,29 @@ class MySQLSearch(SearchBackend):
         ), params)
         for s in sigs:
             conn.execute(
-                text("INSERT INTO t_case_signatures(case_id, signature) VALUES(:case_id,:signature)"),
+                _sql_text("INSERT INTO t_case_signatures(case_id, signature) VALUES(:case_id,:signature)"),
                 {"case_id": cid, "signature": s},
             )
 
     def index_case(self, case: dict) -> None:
         if not self.available() or not case or not case.get("id"):
             return
-        with self._engine_instance().begin() as conn:
+        with get_mysql_client().begin() as conn:
             self._upsert(conn, case)
 
     def remove_case(self, case_id: str) -> None:
         if not self.available():
             return
-        _, text = self._sqlalchemy()
-        with self._engine_instance().begin() as conn:
-            conn.execute(text("DELETE FROM t_case_signatures WHERE case_id=:case_id"), {"case_id": case_id})
-            conn.execute(text("DELETE FROM t_cases WHERE id=:case_id"), {"case_id": case_id})
+        with get_mysql_client().begin() as conn:
+            conn.execute(_sql_text("DELETE FROM t_case_signatures WHERE case_id=:case_id"), {"case_id": case_id})
+            conn.execute(_sql_text("DELETE FROM t_cases WHERE id=:case_id"), {"case_id": case_id})
 
     def reindex_all(self) -> int:
         if not self.available():
             return 0
-        _, text = self._sqlalchemy()
-        with self._engine_instance().begin() as conn:
-            conn.execute(text("DELETE FROM t_case_signatures"))
-            conn.execute(text("DELETE FROM t_cases"))
+        with get_mysql_client().begin() as conn:
+            conn.execute(_sql_text("DELETE FROM t_case_signatures"))
+            conn.execute(_sql_text("DELETE FROM t_cases"))
             n = 0
             for path in sorted(CASES_DIR.rglob("*.md")):
                 case = case_from_file(path)
@@ -125,9 +108,8 @@ class MySQLSearch(SearchBackend):
     def ensure_built(self) -> None:
         if not self.available():
             return
-        _, text = self._sqlalchemy()
-        with self._engine_instance().begin() as conn:
-            row = conn.execute(text("SELECT count(*) AS n FROM t_cases")).mappings().one()
+        with get_mysql_client().begin() as conn:
+            row = conn.execute(_sql_text("SELECT count(*) AS n FROM t_cases")).mappings().one()
             empty = row["n"] == 0
         if empty and any(case_from_file(p) for p in CASES_DIR.rglob("*.md")):
             self.reindex_all()
@@ -139,9 +121,8 @@ class MySQLSearch(SearchBackend):
         started = time.perf_counter()
         self.ensure_built()
         log_low = log.lower()
-        _, text = self._sqlalchemy()
-        with self._engine_instance().begin() as conn:
-            sig_rows = conn.execute(text("SELECT case_id, signature FROM t_case_signatures")).mappings().all()
+        with get_mysql_client().begin() as conn:
+            sig_rows = conn.execute(_sql_text("SELECT case_id, signature FROM t_case_signatures")).mappings().all()
             matched: dict[str, list] = {}
             for row in sig_rows:
                 sig = row["signature"]
@@ -151,7 +132,7 @@ class MySQLSearch(SearchBackend):
                 hits = []
                 for cid, sigs in matched.items():
                     r = conn.execute(
-                        text("SELECT title, file, status, confidence, solution FROM t_cases WHERE id=:case_id"),
+                        _sql_text("SELECT title, file, status, confidence, solution FROM t_cases WHERE id=:case_id"),
                         {"case_id": cid},
                     ).mappings().first()
                     if not r:
@@ -167,7 +148,7 @@ class MySQLSearch(SearchBackend):
             query_text = mysql_query(log)
             if query_text:
                 rows = conn.execute(
-                    text("""SELECT title, file, status,
+                    _sql_text("""SELECT title, file, status,
                               MATCH(title, signatures_text, components, background, diagnosis, solution)
                               AGAINST(:query_text IN NATURAL LANGUAGE MODE) AS score
                        FROM t_cases
@@ -188,10 +169,9 @@ class MySQLSearch(SearchBackend):
         if not self.available():
             return {"backend": "mysql", "available": False, "db": self.label()}
         self.ensure_built()
-        _, text = self._sqlalchemy()
-        with self._engine_instance().begin() as conn:
-            cases = conn.execute(text("SELECT count(*) AS n FROM t_cases")).mappings().one()["n"]
-            signatures = conn.execute(text("SELECT count(*) AS n FROM t_case_signatures")).mappings().one()["n"]
+        with get_mysql_client().begin() as conn:
+            cases = conn.execute(_sql_text("SELECT count(*) AS n FROM t_cases")).mappings().one()["n"]
+            signatures = conn.execute(_sql_text("SELECT count(*) AS n FROM t_case_signatures")).mappings().one()["n"]
         return {
             "backend": "mysql",
             "available": True,

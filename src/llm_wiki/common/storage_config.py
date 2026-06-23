@@ -27,6 +27,29 @@ def storage_backend() -> str:
     return backend
 
 
+def _as_bool(value, default: bool) -> bool:
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off"):
+        return False
+    raise RuntimeError(f"无法解析布尔配置值: {value!r}")
+
+
+def auto_reindex_on_startup() -> bool:
+    """返回启动时是否自动从 wiki/cases/ 整库重建检索索引;缺省为 true。"""
+    data = _config_data()
+    storage = data.get("storage") or {}
+    value = os.environ.get("LOG_WIKI_AUTO_REINDEX_ON_STARTUP")
+    if value in (None, ""):
+        value = storage.get("auto_reindex_on_startup")
+    return _as_bool(value, True)
+
+
 def mysql_config() -> dict:
     """读取 MySQL 连接配置;仅在 storage.backend=mysql 时需要完整填写。"""
     data = _config_data()

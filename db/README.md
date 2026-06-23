@@ -6,7 +6,7 @@
 
 - 知识的唯一权威源始终是 `wiki/cases/*.md`(已复核 / 可回溯的 Markdown)。
 - 本索引库**完全由 Markdown 文件回灌而来**,可随时整库重建,丢了也不影响知识本身。
-- 入库 / 更新 / 删除知识时,后端([llm_wiki.backend.server](../src/llm_wiki/backend/server.py))会**自动同步**索引;服务启动时还会整库重建一次,保证与磁盘一致。
+- 入库 / 更新 / 删除知识时,后端([llm_wiki.backend.server](../src/llm_wiki/backend/server.py))会**自动同步**索引;服务启动时默认还会整库重建一次,保证与磁盘一致。可用 `storage.auto_reindex_on_startup: false` 跳过启动重建。
 - `signatures` 的**精确命中**(子串匹配)仍在应用层做,优先级最高,是"无命中门控"的依据,**不**交给全文检索的相关度排序。
 
 ```
@@ -80,6 +80,7 @@ ORDER BY score ASC;
 ```yaml
 storage:
   backend: "mysql"
+  auto_reindex_on_startup: true
   mysql:
     host: "127.0.0.1"
     port: 3306
@@ -110,6 +111,16 @@ LIMIT 5;
 from llm_wiki import search_index
 search_index.backend.search("把整段报错粘进来")
 # -> {"mode": "exact"|"fuzzy"|"none", "hits": [...], "elapsed_ms": 3}
+```
+
+MySQL 后端的 SQLAlchemy Engine 由统一入口创建和复用:
+
+```python
+from llm_wiki.common.mysql_client import get_mysql_client
+
+engine = get_mysql_client()
+with engine.begin() as conn:
+    ...
 ```
 
 后端 `/api/query` 即走这条路;默认 SQLite 且 FTS5 不可用时 `query.py` 会自动回退到纯文件扫描,功能不变、只是慢一点。

@@ -2,9 +2,9 @@
 """
 llm-wiki Web 后端(FastAPI)
 
-启动:
+    启动:
     pip install -r requirements.txt
-    uvicorn llm_wiki.backend.server:app --reload --port 8000
+    uvicorn --app-dir src llm_wiki.backend.server:app --reload --port 8000
     # 浏览器打开 http://127.0.0.1:8000/
 """
 from fastapi import FastAPI
@@ -15,6 +15,7 @@ from .config import FRONTEND_DIR, ROOT
 from .middleware import request_logging_middleware
 
 from llm_wiki import search_index
+from llm_wiki.common import storage_config
 
 app = FastAPI(title="log-wiki")
 app.middleware("http")(request_logging_middleware)
@@ -22,9 +23,12 @@ app.middleware("http")(request_logging_middleware)
 
 @app.on_event("startup")
 def build_search_index() -> None:
-    """启动时从 wiki/cases/ 整库重建索引,确保与磁盘文件一致。"""
+    """按配置决定启动时是否从 wiki/cases/ 整库重建检索索引。"""
     logger.info("server.startup log_dir=%s root=%s frontend=%s", LOG_DIR, ROOT, FRONTEND_DIR)
     try:
+        if not storage_config.auto_reindex_on_startup():
+            logger.info("search_index.reindex_all skipped by storage.auto_reindex_on_startup=false")
+            return
         if search_index.backend.available():
             n = search_index.backend.reindex_all()
             logger.info(
