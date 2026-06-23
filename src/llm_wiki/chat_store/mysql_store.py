@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import json
 
-from llm_wiki.common import storage_config
-from llm_wiki.common.mysql_client import _sql_text, get_mysql_client
+from llm_wiki.common.mysql_client import (
+    _sql_text,
+    get_mysql_client,
+    get_mysql_label,
+    run_mysql_schema,
+)
 from .common import MYSQL_SCHEMA_PATH, logger, new_id, now
 
 _initialized = False
-
-
-def label() -> str:
-    cfg = storage_config.mysql_config()
-    return f"mysql://{cfg['user']}@{cfg['host']}:{cfg['port']}/{cfg['database']}"
 
 
 def _ensure_schema() -> None:
@@ -25,7 +24,7 @@ def _ensure_schema() -> None:
                 _init_schema(conn)
                 _initialized = True
         except Exception:
-            logger.exception("chat_store mysql schema init failed db=%s", label())
+            logger.exception("chat_store mysql schema init failed db=%s", get_mysql_label())
             raise
 
 
@@ -36,10 +35,7 @@ def _connection():
 
 def _init_schema(conn) -> None:
     """执行 MySQL 对话表初始化脚本。"""
-    for statement in MYSQL_SCHEMA_PATH.read_text(encoding="utf-8").split(";"):
-        statement = statement.strip()
-        if statement:
-            conn.execute(_sql_text(statement))
+    run_mysql_schema(conn, MYSQL_SCHEMA_PATH)
 
 
 def create_session(title: str = "新会话") -> dict:
@@ -231,7 +227,7 @@ def stats() -> dict:
 
         return {
             "backend": "mysql",
-            "db": label(),
+            "db": get_mysql_label(),
             "sessions": one("SELECT count(*) AS n FROM t_chat_sessions"),
             "messages": one("SELECT count(*) AS n FROM t_chat_messages"),
             "up": one("SELECT count(*) AS n FROM t_chat_feedback WHERE rating='up'"),

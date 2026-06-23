@@ -75,21 +75,3 @@ def mysql_config() -> dict:
     if missing:
         raise RuntimeError("storage.mysql 缺少必填字段: " + ", ".join(missing))
     return mysql
-
-
-def mysql_sqlalchemy_url():
-    """构造 SQLAlchemy MySQL URL;仅 MySQL 后端实际连接时调用。"""
-    try:
-        from sqlalchemy.engine import URL
-    except ImportError as exc:
-        raise RuntimeError("使用 MySQL 存储需安装 SQLAlchemy: pip install SQLAlchemy") from exc
-    cfg = mysql_config()
-    return URL.create(
-        "mysql+pymysql",
-        username=cfg["user"],
-        password=cfg["password"],
-        host=cfg["host"],
-        port=cfg["port"],
-        database=cfg["database"],
-        query={"charset": cfg["charset"]},
-    )

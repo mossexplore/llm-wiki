@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import re
 
-from llm_wiki.common import storage_config
-from llm_wiki.common.mysql_client import _sql_text, get_mysql_client
+from llm_wiki.common.mysql_client import (
+    _sql_text,
+    get_mysql_client,
+    get_mysql_label,
+    run_mysql_schema,
+)
 from .common import (
     CASES_DIR,
     MYSQL_SCHEMA_PATH,
@@ -21,17 +25,10 @@ class MySQLSearch(SearchBackend):
         self._ok = None
 
     def label(self) -> str:
-        cfg = storage_config.mysql_config()
-        return f"mysql://{cfg['user']}@{cfg['host']}:{cfg['port']}/{cfg['database']}"
+        return get_mysql_label()
 
     def _init_schema(self, conn) -> None:
-        statements = [
-            stmt.strip()
-            for stmt in MYSQL_SCHEMA_PATH.read_text(encoding="utf-8").split(";")
-            if stmt.strip()
-        ]
-        for stmt in statements:
-            conn.execute(_sql_text(stmt))
+        run_mysql_schema(conn, MYSQL_SCHEMA_PATH)
 
     def available(self) -> bool:
         if self._ok is None:
