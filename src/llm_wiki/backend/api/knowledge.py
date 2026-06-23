@@ -11,6 +11,7 @@ from llm_wiki.knowledge import ingest
 
 from ..config import CASES_DIR, ROOT
 from ..error_codes import ErrorCode, raise_api_error
+from ..response import success
 from ..schemas import KnowledgeUpdateReq
 from ..search_sync import index_case_file, index_remove
 
@@ -130,7 +131,7 @@ def knowledge_list():
             "timestamp": fm.get("timestamp") or "",
             "updated": datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
         })
-    return {"items": items}
+    return success({"items": items})   # 样例:统一信封返回
 
 
 @router.delete("/api/knowledge")
@@ -145,12 +146,12 @@ def knowledge_clear():
         index_remove(path)
         deleted.append(rel)
     ingest.update_indexes()
-    return {"ok": True, "deleted": len(deleted), "files": deleted}
+    return success({"ok": True, "deleted": len(deleted), "files": deleted})
 
 
 @router.get("/api/knowledge/{case_file:path}")
 def knowledge_detail(case_file: str):
-    return case_detail(case_path(case_file))
+    return success(case_detail(case_path(case_file)))
 
 
 @router.delete("/api/knowledge/{case_file:path}")
@@ -160,7 +161,7 @@ def knowledge_delete(case_file: str):
     path.unlink()
     ingest.update_indexes()
     index_remove(path)
-    return {"ok": True, "case_file": str(path.relative_to(ROOT))}
+    return success({"ok": True, "case_file": str(path.relative_to(ROOT))})
 
 
 @router.put("/api/knowledge/{case_file:path}")
@@ -177,4 +178,4 @@ def knowledge_update(case_file: str, req: KnowledgeUpdateReq):
     path.write_text(knowledge_markdown(req, existing, existing_body), encoding="utf-8")
     ingest.update_indexes()
     index_case_file(path)
-    return {"ok": True, "case_file": str(path.relative_to(ROOT))}
+    return success({"ok": True, "case_file": str(path.relative_to(ROOT))})

@@ -4,11 +4,13 @@ import uuid
 from fastapi import Request
 
 from .app_logging import access_logger, logger
+from .response import set_request_id
 
 
 async def request_logging_middleware(request: Request, call_next):
     """统一接口日志:每个 HTTP 请求都有开始/结束/异常记录与 request_id。"""
     request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    set_request_id(request_id)   # 供响应信封 meta.uuid 与异常处理器取用
     started = time.perf_counter()
     client = request.client.host if request.client else "-"
     method = request.method

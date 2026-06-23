@@ -10,6 +10,7 @@ from llm_wiki.knowledge import agent  # noqa: E402
 
 from ..app_logging import logger
 from ..error_codes import ErrorCode, raise_api_error, stream_error_text
+from ..response import success
 from ..schemas import ChatMessageReq, FeedbackReq, SessionCreateReq
 from ..utils import ndjson
 
@@ -27,12 +28,12 @@ def session_title(text: str) -> str:
 def chat_create_session(req: SessionCreateReq):
     user_id = (req.user_id or "").strip() or None
     source_code = (req.source_code or "").strip() or "web"
-    return chat_store.create_session(req.title or "新会话", user_id=user_id, source_code=source_code)
+    return success(chat_store.create_session(req.title or "新会话", user_id=user_id, source_code=source_code))
 
 
 @router.get("/api/chat/sessions")
 def chat_list_sessions():
-    return {"items": chat_store.list_sessions()}
+    return success({"items": chat_store.list_sessions()})
 
 
 @router.delete("/api/chat/sessions")
@@ -42,14 +43,14 @@ def chat_clear_sessions():
         "chat.sessions.clear sessions=%s messages=%s feedback=%s",
         deleted["sessions"], deleted["messages"], deleted["feedback"],
     )
-    return {"ok": True, "deleted": deleted}
+    return success({"ok": True, "deleted": deleted})
 
 
 @router.get("/api/chat/sessions/{session_id}/messages")
 def chat_get_messages(session_id: str):
     if not chat_store.session_exists(session_id):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
-    return {"items": chat_store.get_messages(session_id)}
+    return success({"items": chat_store.get_messages(session_id)})
 
 
 @router.delete("/api/chat/sessions/{session_id}")
@@ -57,7 +58,7 @@ def chat_delete_session(session_id: str):
     ok = chat_store.delete_session(session_id)
     if not ok:
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
-    return {"ok": True}
+    return success({"ok": True})
 
 
 @router.post("/api/chat/sessions/{session_id}/messages")
@@ -233,4 +234,4 @@ def chat_feedback(message_id: str, req: FeedbackReq):
     if req.rating == "down" and not reason:
         raise_api_error(ErrorCode.CHAT_FEEDBACK_REASON_REQUIRED)
     user_id = (req.user_id or "").strip() or msg.get("user_id")
-    return chat_store.set_feedback(message_id, msg["session_id"], req.rating, reason, user_id)
+    return success(chat_store.set_feedback(message_id, msg["session_id"], req.rating, reason, user_id))

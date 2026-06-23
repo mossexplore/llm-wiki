@@ -4,7 +4,7 @@
       try {
         const r = await fetch('/api/graph');
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        state.graph = await r.json();
+        state.graph = apiData(await r.json());
         if (!state.graphSelected && state.graph.nodes && state.graph.nodes.length) {
           const firstCase = state.graph.nodes.find(n => n.type === 'case') || state.graph.nodes[0];
           state.graphSelected = firstCase.id;

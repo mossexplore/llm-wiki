@@ -83,7 +83,7 @@
       try {
         const r = await fetch('/api/chat/sessions');
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        const data = await r.json();
+        const data = apiData(await r.json());
         state.chatSessions = data.items || [];
         state.chatSessionsLoading = false;
         if (selectFirst && !state.chatActive && state.chatSessions.length) {
@@ -106,8 +106,9 @@
           body: JSON.stringify({ title: '新会话' })
         });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法新建会话'); return; }
-        const s = await r.json();
-        if (!r.ok) throw new Error(apiErrorMessage(s, '新建失败'));
+        const payload = await r.json();
+        if (!r.ok) throw new Error(apiErrorMessage(payload, '新建失败'));
+        const s = apiData(payload);
         state.chatSessions.unshift(s);
         state.chatActive = s.id;
         state.chatMessages = [];
@@ -131,9 +132,9 @@
       render();
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id) + '/messages');
-        const data = await r.json();
-        if (!r.ok) throw new Error(apiErrorMessage(data, '加载消息失败'));
-        state.chatMessages = data.items || [];
+        const payload = await r.json();
+        if (!r.ok) throw new Error(apiErrorMessage(payload, '加载消息失败'));
+        state.chatMessages = apiData(payload).items || [];
         state.chatMessagesLoading = false;
         render();
       } catch (e) {
@@ -179,8 +180,9 @@
         stopChatLatencyTimer();
         const r = await fetch('/api/chat/sessions', { method: 'DELETE' });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法清空'); return; }
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(apiErrorMessage(data, '清空失败'));
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(apiErrorMessage(payload, '清空失败'));
+        const data = apiData(payload);
         state.chatSessions = [];
         state.chatActive = '';
         state.chatMessages = [];
@@ -462,9 +464,9 @@
       const mask = wikiModalShell('加载中…', '<div class="empty">' + iconSpin() + '<div>正在加载知识详情</div></div>');
       try {
         const r = await fetch('/api/knowledge/' + file.split('/').map(encodeURIComponent).join('/'));
-        const data = await r.json();
-        if (!r.ok) throw new Error(apiErrorMessage(data, '加载失败'));
-        wikiModalFill(mask, data);
+        const payload = await r.json();
+        if (!r.ok) throw new Error(apiErrorMessage(payload, '加载失败'));
+        wikiModalFill(mask, apiData(payload));
       } catch (e) {
         wikiModalFill(mask, null, String(e && e.message || e));
       }

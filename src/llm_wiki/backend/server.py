@@ -18,6 +18,7 @@ from .api import chat, graph, ingest, knowledge, search, static_pages
 from .app_logging import LOG_DIR, logger
 from .config import FRONTEND_DIR, ROOT
 from .middleware import request_logging_middleware
+from .response import register_exception_handlers
 
 
 def build_search_index() -> None:
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="llm-wiki", lifespan=lifespan)
 app.middleware("http")(request_logging_middleware)
+register_exception_handlers(app)
 
 app.include_router(ingest.router)
 app.include_router(knowledge.router)

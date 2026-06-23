@@ -16,6 +16,7 @@ from llm_wiki.knowledge import ingest
 from ..app_logging import logger
 from ..config import ROOT
 from ..error_codes import ErrorCode, raise_api_error, stream_error_text
+from ..response import success
 from ..schemas import CommitBatchReq, CommitReq, PreviewBatchReq, PreviewReq
 from ..search_sync import index_case_file
 from ..utils import ndjson
@@ -99,7 +100,7 @@ def ingest_commit(req: CommitReq):
     ingest.update_indexes()
     index_case_file(ROOT / res["case_file"])
 
-    return {"ok": True, **res}
+    return success({"ok": True, **res})
 
 
 def split_records(raw: str) -> list[str]:
@@ -245,9 +246,9 @@ def ingest_commit_batch(req: CommitBatchReq):
             logger.exception("ingest.commit_batch.item.error index=%s title=%s", i, rec.title)
             results.append({"index": i, "ok": False, "error": "入库失败"})
     ingest.update_indexes()
-    return {"ok": sum(1 for r in results if r["ok"]), "total": len(results), "results": results}
+    return success({"ok": sum(1 for r in results if r["ok"]), "total": len(results), "results": results})
 
 
 @router.get("/api/examples/ingest")
 def ingest_example():
-    return {"raw": SAMPLE_RAW, "case": SAMPLE_CASE}
+    return success({"raw": SAMPLE_RAW, "case": SAMPLE_CASE})

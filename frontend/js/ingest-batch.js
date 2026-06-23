@@ -209,8 +209,9 @@
           body: JSON.stringify(batchPayload(rec))
         });
         if (noBackend(r.status)) { rec.status = 'pending'; render(); showToast('后端未连接 · 无法入库'); return; }
-        const data = await r.json();
-        if (!r.ok) throw new Error(apiErrorMessage(data, '入库失败'));
+        const payload = await r.json();
+        if (!r.ok) throw new Error(apiErrorMessage(payload, '入库失败'));
+        const data = apiData(payload);
         rec.status = 'committed'; rec.case_file = data.case_file; rec.expanded = false;
         afterBatchMutated();
         render();
@@ -243,8 +244,9 @@
           pending.forEach(i => state.batchRecords[i].status = 'pending');
           state.batchCommitting = false; render(); showToast('后端未连接 · 无法批量入库'); return;
         }
-        const data = await r.json();
-        if (!r.ok) throw new Error(apiErrorMessage(data, '批量入库失败'));
+        const payload = await r.json();
+        if (!r.ok) throw new Error(apiErrorMessage(payload, '批量入库失败'));
+        const data = apiData(payload);
         (data.results || []).forEach(res => {
           const gi = pending[res.index];                 // 映射回全局索引
           const rec = state.batchRecords[gi];

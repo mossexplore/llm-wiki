@@ -110,7 +110,22 @@
       return [404, 405, 501, 502, 503, 504].includes(status);
     }
 
+    // 统一响应信封解包:成功时取 result.data;非信封结构(流式事件/历史接口)原样返回。
+    function apiData(payload) {
+      if (payload && typeof payload === 'object' && payload.result &&
+          typeof payload.result === 'object' && 'data' in payload.result) {
+        return payload.result.data;
+      }
+      return payload;
+    }
+
     function apiErrorMessage(payload, fallback) {
+      // 统一信封:错误信息在 result.{des,code}
+      const result = payload && typeof payload === 'object' ? payload.result : null;
+      if (result && typeof result === 'object' && ('des' in result || 'code' in result)) {
+        const msg = result.des || fallback || '请求失败';
+        return result.code == null ? msg : msg + ' (错误码:' + result.code + ')';
+      }
       const detail = payload && payload.detail !== undefined ? payload.detail : payload;
       if (!detail) return fallback || '请求失败';
       if (typeof detail === 'string') return detail;
@@ -306,8 +321,8 @@
           fetch('/api/kb/stats'),
           fetch('/api/examples/ingest')
         ]);
-        if (statsResp.ok) state.stats = await statsResp.json();
-        if (sampleResp.ok) state.sample = await sampleResp.json();
+        if (statsResp.ok) state.stats = apiData(await statsResp.json());
+        if (sampleResp.ok) state.sample = apiData(await sampleResp.json());
       } catch (e) {}
       render();
     }
