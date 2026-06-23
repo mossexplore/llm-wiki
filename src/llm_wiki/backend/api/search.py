@@ -1,8 +1,9 @@
 import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from ..config import ROOT  # noqa: F401
+from ..error_codes import ErrorCode, raise_api_error
 from ..schemas import QueryReq
 
 from llm_wiki.knowledge import query  # noqa: E402
@@ -13,7 +14,7 @@ router = APIRouter()
 @router.post("/api/query")
 def query_kb(req: QueryReq):
     if not req.log.strip():
-        raise HTTPException(400, "请输入报错信息")
+        raise_api_error(ErrorCode.SEARCH_QUERY_EMPTY)
     return query.search(req.log)
 
 

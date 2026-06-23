@@ -12,7 +12,7 @@
         });
         if (noBackend(r.status)) return demoQuery(t0);
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '检索失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '检索失败'));
         state.result = withElapsed(data, t0);
         state.querying = false;
         render();
@@ -113,4 +113,3 @@
           </div>
         </section>`;
     }
-

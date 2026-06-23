@@ -110,6 +110,17 @@
       return [404, 405, 501, 502, 503, 504].includes(status);
     }
 
+    function apiErrorMessage(payload, fallback) {
+      const detail = payload && payload.detail !== undefined ? payload.detail : payload;
+      if (!detail) return fallback || '请求失败';
+      if (typeof detail === 'string') return detail;
+      if (typeof detail === 'object') {
+        const msg = detail.description || detail.message || detail.error || fallback || '请求失败';
+        return detail.code == null ? msg : msg + ' (错误码:' + detail.code + ')';
+      }
+      return String(detail);
+    }
+
     // 样式化确认弹窗,替代原生 confirm;返回 Promise<boolean>
     function confirmModal(opts) {
       const o = opts || {};

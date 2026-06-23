@@ -91,7 +91,7 @@
         if (noBackend(r.status)) { state.batchStage = 'split'; render(); showToast('后端未连接 · 无法批量抽取'); return; }
         if (!r.ok) {
           let detail = '';
-          try { detail = (await r.json()).detail; } catch (e) { detail = await r.text(); }
+          try { detail = apiErrorMessage(await r.json(), ''); } catch (e) { detail = await r.text(); }
           throw new Error(detail || ('HTTP ' + r.status));
         }
         await readBatchPreviewStream(r);
@@ -210,7 +210,7 @@
         });
         if (noBackend(r.status)) { rec.status = 'pending'; render(); showToast('后端未连接 · 无法入库'); return; }
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '入库失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '入库失败'));
         rec.status = 'committed'; rec.case_file = data.case_file; rec.expanded = false;
         afterBatchMutated();
         render();
@@ -244,7 +244,7 @@
           state.batchCommitting = false; render(); showToast('后端未连接 · 无法批量入库'); return;
         }
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '批量入库失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '批量入库失败'));
         (data.results || []).forEach(res => {
           const gi = pending[res.index];                 // 映射回全局索引
           const rec = state.batchRecords[gi];

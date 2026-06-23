@@ -7,11 +7,12 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header
 from fastapi.responses import StreamingResponse
 
 from ..app_logging import logger
 from ..config import ROOT
+from ..error_codes import ErrorCode, raise_api_error
 from ..schemas import CommitBatchReq, CommitReq, PreviewBatchReq, PreviewReq
 from ..search_sync import index_case_file
 from ..utils import ndjson
@@ -45,7 +46,7 @@ def ingest_preview(req: PreviewReq, x_request_id: Optional[str] = Header(default
     """流式返回模型抽取的 JSON 文本;前端据此计算字段进度,此步不写任何文件。"""
     raw = req.raw
     if not raw.strip():
-        raise HTTPException(400, "内容为空")
+        raise_api_error(ErrorCode.INGEST_CONTENT_EMPTY)
     request_id = x_request_id or uuid.uuid4().hex[:12]
     prompt = ingest.EXTRACT_PROMPT.format(raw=raw)
     started = time.perf_counter()
@@ -85,9 +86,9 @@ def ingest_preview(req: PreviewReq, x_request_id: Optional[str] = Header(default
 @router.post("/api/ingest/commit")
 def ingest_commit(req: CommitReq):
     if not req.title.strip():
-        raise HTTPException(400, "title 不能为空")
+        raise_api_error(ErrorCode.INGEST_TITLE_EMPTY)
     if not req.signatures:
-        raise HTTPException(400, "signatures 不能为空(检索全靠它命中)")
+        raise_api_error(ErrorCode.INGEST_SIGNATURES_EMPTY)
 
     ident = req.ident or datetime.datetime.now().strftime("%H%M%S")
     raw_path = ingest.archive_raw(req.raw, ident)
@@ -168,7 +169,7 @@ def ingest_preview_batch(req: PreviewBatchReq):
     """切分多条原始记录,并行调用 LLM 抽取;以 NDJSON 流式返回。"""
     records = split_records(req.raw)
     if not records:
-        raise HTTPException(400, "未解析到任何记录;请用 Markdown 一级标题 # 分隔多条")
+        raise_api_error(ErrorCode.INGEST_BATCH_PARSE_EMPTY)
     request_id = uuid.uuid4().hex[:12]
 
     def work(i: int, rec: str, out: queue.Queue):
@@ -239,7 +240,7 @@ def ingest_preview_batch(req: PreviewBatchReq):
 def ingest_commit_batch(req: CommitBatchReq):
     """一次性把多条已复核记录入库;逐条写,返回每条结果,最后统一刷新索引。"""
     if not req.records:
-        raise HTTPException(400, "没有要入库的记录")
+        raise_api_error(ErrorCode.INGEST_COMMIT_BATCH_EMPTY)
     used: set = set()
     stamp = datetime.datetime.now().strftime("%H%M%S")
     results = []

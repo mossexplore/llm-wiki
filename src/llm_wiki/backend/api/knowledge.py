@@ -2,10 +2,11 @@ import datetime
 import pathlib
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 import yaml  # noqa: E402
 
 from ..config import CASES_DIR, ROOT
+from ..error_codes import ErrorCode, raise_api_error
 from ..schemas import KnowledgeUpdateReq
 from ..search_sync import index_case_file, index_remove
 
@@ -47,11 +48,11 @@ def case_path(case_file: str) -> pathlib.Path:
     try:
         path.relative_to(cases_root)
     except ValueError:
-        raise HTTPException(400, "非法知识路径")
+        raise_api_error(ErrorCode.KNOWLEDGE_PATH_INVALID)
     if path.suffix != ".md" or path.name in ("index.md", "log.md"):
-        raise HTTPException(400, "非法知识文件")
+        raise_api_error(ErrorCode.KNOWLEDGE_FILE_INVALID)
     if not path.exists():
-        raise HTTPException(404, "知识不存在")
+        raise_api_error(ErrorCode.KNOWLEDGE_NOT_FOUND)
     return path
 
 
@@ -180,10 +181,10 @@ def knowledge_delete(case_file: str):
 @router.put("/api/knowledge/{case_file:path}")
 def knowledge_update(case_file: str, req: KnowledgeUpdateReq):
     if not req.title.strip():
-        raise HTTPException(400, "title 不能为空")
+        raise_api_error(ErrorCode.KNOWLEDGE_TITLE_EMPTY)
     signatures = [s for s in req.signatures if s and s.strip()]
     if not signatures:
-        raise HTTPException(400, "signatures 不能为空(检索全靠它命中)")
+        raise_api_error(ErrorCode.KNOWLEDGE_SIGNATURES_EMPTY)
     req.signatures = signatures
     req.components = [c for c in req.components if c and c.strip()]
     path = case_path(case_file)

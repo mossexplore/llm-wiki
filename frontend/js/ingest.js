@@ -24,7 +24,7 @@
         if (!resp.ok) {
           if (noBackend(resp.status)) return demoPreview(raw);
           let detail = '';
-          try { detail = (await resp.json()).detail; } catch (e) {}
+          try { detail = apiErrorMessage(await resp.json(), ''); } catch (e) {}
           throw new Error(`[request_id=${responseRequestId}] ${detail || 'HTTP ' + resp.status}`);
         }
         const reader = resp.body.getReader();
@@ -122,7 +122,7 @@
           return;
         }
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '入库失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '入库失败'));
         state.committed = data;
         state.knowledgeDirty = true;   // 标记列表需刷新:切到知识列表页会自动重载
         state.graph = null; state.graphSelected = '';   // 新增知识,图谱缓存失效

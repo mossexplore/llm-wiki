@@ -1,10 +1,11 @@
 import time
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from ..app_logging import logger
+from ..error_codes import ErrorCode, raise_api_error
 from ..schemas import ChatMessageReq, FeedbackReq, SessionCreateReq
 from ..utils import ndjson
 
@@ -46,7 +47,7 @@ def chat_clear_sessions():
 @router.get("/api/chat/sessions/{session_id}/messages")
 def chat_get_messages(session_id: str):
     if not chat_store.session_exists(session_id):
-        raise HTTPException(404, "会话不存在")
+        raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
     return {"items": chat_store.get_messages(session_id)}
 
 
@@ -54,7 +55,7 @@ def chat_get_messages(session_id: str):
 def chat_delete_session(session_id: str):
     ok = chat_store.delete_session(session_id)
     if not ok:
-        raise HTTPException(404, "会话不存在")
+        raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
     return {"ok": True}
 
 
@@ -63,9 +64,9 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
     """对话主流程:存用户消息 → 检索 → 流式生成 → 存 Agent 回复。"""
     text = (req.content or "").strip()
     if not text:
-        raise HTTPException(400, "内容为空")
+        raise_api_error(ErrorCode.CHAT_MESSAGE_EMPTY)
     if not chat_store.session_exists(session_id):
-        raise HTTPException(404, "会话不存在")
+        raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
 
     has_history = chat_store.has_messages(session_id)
     user_id = (req.user_id or "").strip() or None
@@ -213,14 +214,14 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 @router.post("/api/chat/messages/{message_id}/feedback")
 def chat_feedback(message_id: str, req: FeedbackReq):
     if req.rating not in ("up", "down"):
-        raise HTTPException(400, "rating 必须为 up 或 down")
+        raise_api_error(ErrorCode.CHAT_FEEDBACK_INVALID_RATING)
     msg = chat_store.message_exists(message_id)
     if not msg:
-        raise HTTPException(404, "消息不存在")
+        raise_api_error(ErrorCode.CHAT_MESSAGE_NOT_FOUND)
     if msg["role"] != "assistant":
-        raise HTTPException(400, "只能对 Agent 回复反馈")
+        raise_api_error(ErrorCode.CHAT_FEEDBACK_ASSISTANT_ONLY)
     reason = (req.reason or "").strip() or None
     if req.rating == "down" and not reason:
-        raise HTTPException(400, "点踩请填写原因")
+        raise_api_error(ErrorCode.CHAT_FEEDBACK_REASON_REQUIRED)
     user_id = (req.user_id or "").strip() or msg.get("user_id")
     return chat_store.set_feedback(message_id, msg["session_id"], req.rating, reason, user_id)

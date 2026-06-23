@@ -107,7 +107,7 @@
         });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法新建会话'); return; }
         const s = await r.json();
-        if (!r.ok) throw new Error(s.detail || '新建失败');
+        if (!r.ok) throw new Error(apiErrorMessage(s, '新建失败'));
         state.chatSessions.unshift(s);
         state.chatActive = s.id;
         state.chatMessages = [];
@@ -132,7 +132,7 @@
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id) + '/messages');
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '加载消息失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '加载消息失败'));
         state.chatMessages = data.items || [];
         state.chatMessagesLoading = false;
         render();
@@ -153,7 +153,7 @@
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id), { method: 'DELETE' });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法删除'); return; }
-        if (!r.ok) { const d = await r.json(); throw new Error(d.detail || '删除失败'); }
+        if (!r.ok) { const d = await r.json(); throw new Error(apiErrorMessage(d, '删除失败')); }
         state.chatSessions = state.chatSessions.filter(s => s.id !== id);
         if (state.chatActive === id) {
           state.chatActive = '';
@@ -180,7 +180,7 @@
         const r = await fetch('/api/chat/sessions', { method: 'DELETE' });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法清空'); return; }
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.detail || '清空失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '清空失败'));
         state.chatSessions = [];
         state.chatActive = '';
         state.chatMessages = [];
@@ -223,7 +223,7 @@
           body: JSON.stringify({ content: text })
         });
         if (noBackend(r.status)) throw new Error('后端未连接');
-        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || '发送失败'); }
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(apiErrorMessage(d, '发送失败')); }
         await consumeChatStream(r);
       } catch (e) {
         state.chatStreaming = false;
@@ -385,7 +385,7 @@
         });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法反馈'); return; }
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '反馈失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '反馈失败'));
         const msg = state.chatMessages.find(m => m.id === messageId);
         if (msg) { msg.feedback_rating = rating; msg.feedback_reason = reason; }
         render();
@@ -463,7 +463,7 @@
       try {
         const r = await fetch('/api/knowledge/' + file.split('/').map(encodeURIComponent).join('/'));
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '加载失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '加载失败'));
         wikiModalFill(mask, data);
       } catch (e) {
         wikiModalFill(mask, null, String(e && e.message || e));

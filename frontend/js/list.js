@@ -29,7 +29,7 @@
       try {
         const r = await fetch('/api/knowledge/' + file.split('/').map(encodeURIComponent).join('/'));
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '加载知识失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '加载知识失败'));
         state.draft = toDraft(data, data.raw || '');
         state.draft.file = data.file;
         render();
@@ -52,7 +52,7 @@
         const r = await fetch('/api/knowledge/' + file.split('/').map(encodeURIComponent).join('/'), { method: 'DELETE' });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法删除'); return; }
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '删除失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '删除失败'));
         if (state.knowledgeSelected === file) { state.knowledgeSelected = ''; state.draft = null; }
         state.graph = null; state.graphSelected = '';   // 知识变更,图谱缓存失效,下次进图谱页重载
         showToast('已删除');
@@ -76,7 +76,7 @@
         const r = await fetch('/api/knowledge', { method: 'DELETE' });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法清空'); return; }
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '清空失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '清空失败'));
         state.knowledgeSelected = ''; state.draft = null;
         state.graph = null; state.graphSelected = '';   // 知识全清,图谱缓存失效
         showToast('已清空 ' + (data.deleted || n) + ' 条知识');
@@ -112,7 +112,7 @@
           body: JSON.stringify(payload)
         });
         const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || '更新失败');
+        if (!r.ok) throw new Error(apiErrorMessage(data, '更新失败'));
         state.knowledgeSaving = false;
         state.graph = null; state.graphSelected = '';   // 知识变更,图谱缓存失效
         await loadKnowledgeList(true);
