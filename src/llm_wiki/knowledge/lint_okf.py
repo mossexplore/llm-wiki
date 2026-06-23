@@ -7,7 +7,8 @@ import re
 import sys
 import yaml
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+from llm_wiki.common.paths import ROOT
+
 WIKI_DIR = ROOT / "wiki"
 CASES_DIR = WIKI_DIR / "cases"
 RAW_DIR = ROOT / "raw" / "sources"

@@ -1,6 +1,10 @@
 # 完整 config.yaml 样例 —— 真实密钥请只放在本地私有配置中,不要提交 config.yaml
 env: "dev"                                # dev 时会设置 NO_PROXY=127.0.0.1;生产/代理环境可改为 product
 
+# project.root 可选;不填时会按源码位置自动推导仓库根目录。
+project:
+  root: ""                                # 例: /opt/wiserec-wiki
+
 # openai 段:写入知识(LLM 抽取)用。
 openai:
   api_key: "sk-写入知识用密钥"             # 必填

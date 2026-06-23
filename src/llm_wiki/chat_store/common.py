@@ -8,7 +8,8 @@ import os
 import pathlib
 import uuid
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+from llm_wiki.common.paths import ROOT
+
 DB_PATH = pathlib.Path(os.environ.get("CHAT_DB", ROOT / "db" / "chat.db"))
 SCHEMA_PATH = ROOT / "db" / "schema.chat.sql"
 MYSQL_SCHEMA_PATH = ROOT / "db" / "schema.chat.mysql.sql"

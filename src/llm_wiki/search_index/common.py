@@ -10,7 +10,8 @@ import re
 
 import yaml
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+from llm_wiki.common.paths import ROOT
+
 CASES_DIR = ROOT / "wiki" / "cases"
 DB_PATH = pathlib.Path(os.environ.get("SEARCH_DB", ROOT / "index" / "search.db"))
 SCHEMA_PATH = ROOT / "db" / "schema.sqlite.sql"

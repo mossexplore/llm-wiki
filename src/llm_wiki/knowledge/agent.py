@@ -19,11 +19,12 @@ agent.py — 对话 Agent 的「先检索、后生成」编排层(RAG)
   - CHAT_SYSTEM_PROMPT    未命中、纯大模型兜底时的系统提示词。
 """
 from __future__ import annotations
-import os, re, pathlib, logging
+import os, re, logging
+
+from llm_wiki.common.paths import ROOT
 
 from . import ingest, query
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
 CASES_DIR = ROOT / "wiki" / "cases"
 logger = logging.getLogger("log_wiki.agent")
 

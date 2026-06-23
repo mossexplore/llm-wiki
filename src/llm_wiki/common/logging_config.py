@@ -7,7 +7,8 @@ import os
 import pathlib
 from logging.handlers import RotatingFileHandler
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+from llm_wiki.common.paths import ROOT
+
 DEFAULT_LOG_DIR = ROOT / "logs"
 
 

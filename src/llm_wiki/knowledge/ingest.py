@@ -23,7 +23,8 @@ ingest.py — LLM Wiki 入库辅助管线
 import os, sys, json, re, argparse, datetime, logging, pathlib, yaml
 from openai import OpenAI
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+from llm_wiki.common.paths import CONFIG_PATH, ROOT
+
 RAW_DIR = ROOT / "raw" / "sources"
 DRAFTS_DIR = ROOT / "wiki" / "cases" / "_drafts"
 WIKI_DIR = ROOT / "wiki"
@@ -48,7 +49,6 @@ EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原
 ---"""
 
 
-CONFIG_PATH = pathlib.Path(os.environ.get("INGEST_CONFIG", ROOT / "config.yaml"))
 _clients: dict = {}    # section -> (OpenAI client, model, config_key);按配置段缓存,配置变化时自动刷新
 
 

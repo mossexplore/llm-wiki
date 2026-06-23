@@ -13,11 +13,11 @@ query.py — 用一段日志报错,从 wiki/cases/ 里找相似案例
     python -m llm_wiki.knowledge.query "把整段报错粘进来"
     cat error.log | python -m llm_wiki.knowledge.query -
 """
-import sys, re, pathlib, time, logging
+import sys, re, time, logging
 
 from llm_wiki import search_index
+from llm_wiki.common.paths import ROOT
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
 CASES_DIR = ROOT / "wiki" / "cases"
 logger = logging.getLogger("log_wiki.query")
 

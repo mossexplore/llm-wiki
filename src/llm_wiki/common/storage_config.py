@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import os
-import pathlib
 import yaml
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
-CONFIG_PATH = pathlib.Path(os.environ.get("INGEST_CONFIG", ROOT / "config.yaml"))
+from llm_wiki.common.paths import CONFIG_PATH
 
 
 def _config_data() -> dict:
