@@ -113,7 +113,11 @@ def retrieve(text: str) -> dict:
 
 def _context_block(context: list, related: bool) -> str:
     """把检索到的案例拼成喂给大模型的资料文本。"""
-    head = "【知识库检索到的相关案例资料(关联度较高,供参考)】" if related else "【知识库检索到的相关案例资料(精确命中)】"
+    head = (
+        "【知识库检索到的相关案例资料(关联度较高,供参考)】"
+        if related
+        else "【知识库检索到的相关案例资料(精确命中)】"
+    )
     blocks = [head, ""]
     for i, c in enumerate(context, 1):
         blocks.append(f"案例{i}:{c['title']}(来源 wiki:{c['file']})")
@@ -164,7 +168,9 @@ def build_answer_messages(text: str, decision: dict) -> list[dict]:
 
     对话页面不做多轮上下文注入:每次请求只携带系统提示和本轮用户问题。
     """
-    messages = [{"role": "system", "content": WIKI_PROMPT if decision.get("source") == "wiki" else CHAT_SYSTEM_PROMPT}]
+    messages = [
+        {"role": "system", "content": WIKI_PROMPT if decision.get("source") == "wiki" else CHAT_SYSTEM_PROMPT}
+    ]
     if decision.get("source") == "wiki":
         context_text = _context_block(decision.get("context", []), related=(decision.get("mode") == "fuzzy"))
         messages.append({"role": "user", "content": f"{context_text}\n\n【用户问题】\n{text}"})
@@ -180,12 +186,9 @@ def stream_messages(messages):
     stats = message_stats(messages)
     started = time.perf_counter()
     logger.info(
-        "agent.chat.request model=%s thinking_enabled=%s message_count=%s char_count=%s message_lengths=%s",
-        model,
-        thinking_enabled,
-        stats["message_count"],
-        stats["char_count"],
-        stats["message_lengths"],
+        f"agent.chat.request model={model} thinking_enabled={thinking_enabled} "
+        f"message_count={stats['message_count']} char_count={stats['char_count']} "
+        f"message_lengths={stats['message_lengths']}"
     )
     request_kwargs = {
         "model": model,
@@ -197,9 +200,7 @@ def stream_messages(messages):
         request_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     stream = client.chat.completions.create(**request_kwargs)
     logger.info(
-        "agent.chat.stream_created model=%s create_ms=%s",
-        model,
-        int((time.perf_counter() - started) * 1000),
+        f"agent.chat.stream_created model={model} create_ms={int((time.perf_counter() - started) * 1000)}"
     )
     first_chunk_logged = False
     first_content_logged = False
@@ -207,16 +208,14 @@ def stream_messages(messages):
         if not first_chunk_logged:
             first_chunk_logged = True
             logger.info(
-                "agent.chat.first_chunk model=%s first_chunk_ms=%s",
-                model,
-                int((time.perf_counter() - started) * 1000),
+                f"agent.chat.first_chunk model={model} "
+                f"first_chunk_ms={int((time.perf_counter() - started) * 1000)}"
             )
         if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
             if not first_content_logged:
                 first_content_logged = True
                 logger.info(
-                    "agent.chat.first_content model=%s first_content_ms=%s",
-                    model,
-                    int((time.perf_counter() - started) * 1000),
+                    f"agent.chat.first_content model={model} "
+                    f"first_content_ms={int((time.perf_counter() - started) * 1000)}"
                 )
             yield chunk.choices[0].delta.content

@@ -113,7 +113,14 @@ def _search_files(log: str) -> dict:
         sig_tokens = set().union(*(tokenize(s) for s in c["signatures"])) if c["signatures"] else set()
         score = len(log_tokens & (sig_tokens | tokenize(c["title"])))
         if score:
-            scored.append({"title": c["title"], "file": str(c["path"].relative_to(ROOT)), "score": score, "status": c["status"]})
+            scored.append(
+                {
+                    "title": c["title"],
+                    "file": str(c["path"].relative_to(ROOT)),
+                    "score": score,
+                    "status": c["status"],
+                }
+            )
     scored.sort(key=lambda x: -x["score"])
     if scored:
         return _done({"mode": "fuzzy", "hits": scored[:3]})
@@ -153,7 +160,10 @@ def main():
         lines.extend(["", "建议:用上面案例的 signatures 反向核对你的报错,或接入 QMD 语义检索。"])
         logger.info("\n".join(lines))
     else:
-        logger.info("知识库中暂无相关案例。请勿编造解决方案;排查后可用 python -m llm_wiki.knowledge.ingest 把本次结论入库。")
+        logger.info(
+            "知识库中暂无相关案例。请勿编造解决方案;"
+            "排查后可用 python -m llm_wiki.knowledge.ingest 把本次结论入库。"
+        )
 
 
 def _indent(text: str, n: int = 2) -> str:

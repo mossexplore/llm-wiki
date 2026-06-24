@@ -35,7 +35,9 @@ class BaseChatStore:
         raise NotImplementedError
 
     # --- 会话 ---------------------------------------------------------------
-    def create_session(self, title: str = "新会话", user_id: str | None = None, source_code: str = "web") -> dict:
+    def create_session(
+        self, title: str = "新会话", user_id: str | None = None, source_code: str = "web"
+    ) -> dict:
         sid = new_id()
         ts = now()
         title = title or "新会话"
@@ -44,7 +46,14 @@ class BaseChatStore:
             c.run(
                 """INSERT INTO t_chat_sessions (id, user_id, source_code, title, created_at, updated_at)
                    VALUES (:id,:user_id,:source_code,:title,:created_at,:updated_at)""",
-                {"id": sid, "user_id": user_id, "source_code": source_code, "title": title, "created_at": ts, "updated_at": ts},
+                {
+                    "id": sid,
+                    "user_id": user_id,
+                    "source_code": source_code,
+                    "title": title,
+                    "created_at": ts,
+                    "updated_at": ts,
+                },
             )
         return {
             "id": sid,
@@ -82,11 +91,17 @@ class BaseChatStore:
 
     def has_messages(self, session_id: str) -> bool:
         with self._tx() as c:
-            return c.one("SELECT 1 AS x FROM t_chat_messages WHERE session_id=:sid LIMIT 1", {"sid": session_id}) is not None
+            return (
+                c.one("SELECT 1 AS x FROM t_chat_messages WHERE session_id=:sid LIMIT 1", {"sid": session_id})
+                is not None
+            )
 
     def rename_session(self, session_id: str, title: str) -> None:
         with self._tx() as c:
-            c.run("UPDATE t_chat_sessions SET title=:title, updated_at=:ts WHERE id=:sid", {"title": title, "ts": now(), "sid": session_id})
+            c.run(
+                "UPDATE t_chat_sessions SET title=:title, updated_at=:ts WHERE id=:sid",
+                {"title": title, "ts": now(), "sid": session_id},
+            )
 
     def delete_session(self, session_id: str, user_id: str | None = None) -> bool:
         """删会话;传 user_id 时只删归属该用户的会话。仅在会话确被删除时级联消息/反馈。"""
@@ -109,7 +124,9 @@ class BaseChatStore:
         消息与反馈按「会话归属」级联(session_id 属于该用户的会话),而非按各自的
         user_id —— 删一个用户的会话就要带走该会话里的全部内容。
         """
-        owned = "WHERE session_id IN (SELECT id FROM t_chat_sessions WHERE user_id = :user_id)" if user_id else ""
+        owned = (
+            "WHERE session_id IN (SELECT id FROM t_chat_sessions WHERE user_id = :user_id)" if user_id else ""
+        )
         sess_where = "WHERE user_id = :user_id" if user_id else ""
         params = {"user_id": user_id} if user_id else None
         with self._tx() as c:
@@ -126,7 +143,13 @@ class BaseChatStore:
 
     # --- 消息 ---------------------------------------------------------------
     def add_message(
-        self, session_id: str, role: str, content: str, metrics: MessageMetrics | None = None, *, user_id: str | None = None
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        metrics: MessageMetrics | None = None,
+        *,
+        user_id: str | None = None,
     ) -> dict:
         """追加一条消息,返回完整记录(含生成的 id / seq)。"""
         m = metrics or MessageMetrics()
@@ -202,12 +225,20 @@ class BaseChatStore:
         """取消息基本信息;传 user_id 时还要求归属该用户(否则视为不存在)。"""
         with self._tx() as c:
             return c.one(
-                "SELECT id, session_id, user_id, role FROM t_chat_messages WHERE id=:mid AND (:uid IS NULL OR user_id=:uid)",
+                "SELECT id, session_id, user_id, role FROM t_chat_messages "
+                "WHERE id=:mid AND (:uid IS NULL OR user_id=:uid)",
                 {"mid": message_id, "uid": user_id},
             )
 
     # --- 反馈 ---------------------------------------------------------------
-    def set_feedback(self, message_id: str, session_id: str, feedback: str, reason: str | None = None, user_id: str | None = None) -> dict:
+    def set_feedback(
+        self,
+        message_id: str,
+        session_id: str,
+        feedback: str,
+        reason: str | None = None,
+        user_id: str | None = None,
+    ) -> dict:
         """记录一条反馈;同一消息重复反馈则覆盖。"""
         ts = now()
         with self._tx() as c:
@@ -215,7 +246,10 @@ class BaseChatStore:
             if existing:
                 c.run(
                     """UPDATE t_chat_feedbacks
-                       SET user_id=COALESCE(:user_id, user_id), feedback=:feedback, reason=:reason, updated_at=:ts
+                       SET user_id=COALESCE(:user_id, user_id),
+                           feedback=:feedback,
+                           reason=:reason,
+                           updated_at=:ts
                        WHERE message_id=:mid""",
                     {"user_id": user_id, "feedback": feedback, "reason": reason, "ts": ts, "mid": message_id},
                 )
@@ -237,7 +271,13 @@ class BaseChatStore:
                         "updated_at": ts,
                     },
                 )
-        return {"id": fid, "message_id": message_id, "user_id": user_id, "feedback": feedback, "reason": reason}
+        return {
+            "id": fid,
+            "message_id": message_id,
+            "user_id": user_id,
+            "feedback": feedback,
+            "reason": reason,
+        }
 
     def clear_feedback(self, message_id: str) -> bool:
         """取消一条消息的反馈。"""

@@ -51,4 +51,6 @@ def test_real_schema_files_have_no_comment_only_fragments():
         # 不应有「纯注释残片」被当成语句
         for s in stmts:
             assert not s.lstrip().startswith("--"), f"{name} 切出了注释残片: {s[:40]!r}"
-            assert s.lstrip().upper().startswith(("CREATE", "INSERT", "ALTER", "DROP")), f"{name} 切出了非 DDL 残片: {s[:40]!r}"
+            assert s.lstrip().upper().startswith(("CREATE", "INSERT", "ALTER", "DROP")), (
+                f"{name} 切出了非 DDL 残片: {s[:40]!r}"
+            )

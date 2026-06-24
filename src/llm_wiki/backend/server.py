@@ -32,10 +32,8 @@ def build_search_index() -> None:
         if search_index.backend.available():
             n = search_index.backend.reindex_all()
             logger.info(
-                "search_index.reindex_all built=%s backend=%s db=%s",
-                n,
-                type(search_index.backend).__name__,
-                search_index.backend.label(),
+                f"search_index.reindex_all built={n} backend={type(search_index.backend).__name__} "
+                f"db={search_index.backend.label()}"
             )
         else:
             logger.warning("FTS5 不可用,检索将回退到文件扫描(功能正常,速度较慢)。")

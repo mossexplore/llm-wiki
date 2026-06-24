@@ -32,6 +32,8 @@ def kb_stats():
             "verified": verified,
             "drafts": drafts,
             "signatures": signatures,
-            "updated": datetime.datetime.fromtimestamp(latest).isoformat(timespec="seconds") if latest else None,
+            "updated": datetime.datetime.fromtimestamp(latest).isoformat(timespec="seconds")
+            if latest
+            else None,
         }
     )

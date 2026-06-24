@@ -76,7 +76,14 @@ def clear_sessions(user_id: str | None = None) -> dict:
     return _backend().clear_sessions(user_id)
 
 
-def add_message(session_id: str, role: str, content: str, metrics: MessageMetrics | None = None, *, user_id: str | None = None) -> dict:
+def add_message(
+    session_id: str,
+    role: str,
+    content: str,
+    metrics: MessageMetrics | None = None,
+    *,
+    user_id: str | None = None,
+) -> dict:
     return _backend().add_message(session_id, role, content, metrics, user_id=user_id)
 
 
@@ -88,7 +95,9 @@ def message_exists(message_id: str, user_id: str | None = None) -> dict | None:
     return _backend().message_exists(message_id, user_id)
 
 
-def set_feedback(message_id: str, session_id: str, feedback: str, reason: str | None = None, user_id: str | None = None) -> dict:
+def set_feedback(
+    message_id: str, session_id: str, feedback: str, reason: str | None = None, user_id: str | None = None
+) -> dict:
     return _backend().set_feedback(message_id, session_id, feedback, reason, user_id)
 
 

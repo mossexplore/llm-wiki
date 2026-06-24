@@ -45,7 +45,7 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.ruff]
-line-length = 140
+line-length = 110
 src = ["src", "tests"]
 target-version = "py39"
 

@@ -102,7 +102,9 @@ class MySQLSearch(SearchBackend):
         if not self.available():
             return
         with get_mysql_client().begin() as conn:
-            conn.execute(_sql_text("DELETE FROM t_case_signatures WHERE case_id=:case_id"), {"case_id": case_id})
+            conn.execute(
+                _sql_text("DELETE FROM t_case_signatures WHERE case_id=:case_id"), {"case_id": case_id}
+            )
             conn.execute(_sql_text("DELETE FROM t_cases WHERE id=:case_id"), {"case_id": case_id})
 
     def reindex_all(self) -> int:
@@ -140,7 +142,10 @@ class MySQLSearch(SearchBackend):
             # 子串判断下推到 MySQL(LOCATE),避免每次查询把整张 signature 表拉回应用层。
             sig_rows = (
                 conn.execute(
-                    _sql_text("SELECT case_id, signature FROM t_case_signatures WHERE LOCATE(LOWER(signature), :log) > 0"),
+                    _sql_text(
+                        "SELECT case_id, signature FROM t_case_signatures "
+                        "WHERE LOCATE(LOWER(signature), :log) > 0"
+                    ),
                     {"log": log_low},
                 )
                 .mappings()
@@ -154,7 +159,10 @@ class MySQLSearch(SearchBackend):
                 for cid, sigs in matched.items():
                     r = (
                         conn.execute(
-                            _sql_text("SELECT title, file, status, confidence, solution FROM t_cases WHERE id=:case_id"),
+                            _sql_text(
+                                "SELECT title, file, status, confidence, solution "
+                                "FROM t_cases WHERE id=:case_id"
+                            ),
                             {"case_id": cid},
                         )
                         .mappings()
@@ -210,7 +218,9 @@ class MySQLSearch(SearchBackend):
         self.ensure_built()
         with get_mysql_client().begin() as conn:
             cases = conn.execute(_sql_text("SELECT count(*) AS n FROM t_cases")).mappings().one()["n"]
-            signatures = conn.execute(_sql_text("SELECT count(*) AS n FROM t_case_signatures")).mappings().one()["n"]
+            signatures = (
+                conn.execute(_sql_text("SELECT count(*) AS n FROM t_case_signatures")).mappings().one()["n"]
+            )
         return {
             "backend": "mysql",
             "available": True,

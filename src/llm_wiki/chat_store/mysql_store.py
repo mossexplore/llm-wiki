@@ -21,7 +21,9 @@ from .common import MYSQL_SCHEMA_PATH, logger, now
 CHAT_COLUMN_DEFINITIONS = {
     "t_chat_sessions": {
         "user_id": "VARCHAR(64) COMMENT '用户 id, 标识该会话归属的用户'",
-        "source_code": "VARCHAR(64) NOT NULL DEFAULT 'web' COMMENT '会话来源编码, 关联 t_session_sources.code'",
+        "source_code": (
+            "VARCHAR(64) NOT NULL DEFAULT 'web' COMMENT '会话来源编码, 关联 t_session_sources.code'"
+        ),
     },
     "t_chat_messages": {
         "user_id": "VARCHAR(64) COMMENT '用户 id, 标识该消息归属的用户'",
@@ -156,7 +158,9 @@ def _migrate_feedback_table(conn) -> None:
 
 
 def _migrate_feedback_columns(conn) -> None:
-    if _column_exists(conn, "t_chat_feedbacks", "rating") or not _column_exists(conn, "t_chat_feedbacks", "feedback"):
+    if _column_exists(conn, "t_chat_feedbacks", "rating") or not _column_exists(
+        conn, "t_chat_feedbacks", "feedback"
+    ):
         conn.execute(_sql_text("DROP TABLE t_chat_feedbacks"))
         run_mysql_schema(conn, MYSQL_SCHEMA_PATH)
         return

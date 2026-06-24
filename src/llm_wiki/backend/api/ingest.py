@@ -37,8 +37,13 @@ SAMPLE_CASE = {
     "category": "数据库 / 连接池",
     "signatures": ["HikariPool-1 - Connection is not available, request timed out"],
     "components": ["order-service", "HikariCP", "MySQL"],
-    "background": "大促高峰期 order-service 接口批量返回 500,DB CPU 不高但活跃连接顶满 maximumPoolSize 设为 20。",
-    "diagnosis": "慢查询 getOrderDetail 平均 4.2s 长时间占用连接,连接池耗尽后续请求等待 30s 超时,HikariCP 抛 Connection is not available。",
+    "background": (
+        "大促高峰期 order-service 接口批量返回 500,DB CPU 不高但活跃连接顶满 maximumPoolSize 设为 20。"
+    ),
+    "diagnosis": (
+        "慢查询 getOrderDetail 平均 4.2s 长时间占用连接,"
+        "连接池耗尽后续请求等待 30s 超时,HikariCP 抛 Connection is not available。"
+    ),
     "solution": (
         "为 getOrderDetail 涉及字段加复合索引,查询从 4.2s 降至 60ms;maximumPoolSize 由 20 调至 40,"
         "并启用 HikariCP leakDetectionThreshold 连接泄漏检测,大促期间未再出现连接池耗尽。"
@@ -55,12 +60,7 @@ def ingest_preview(req: PreviewReq, x_request_id: Optional[str] = Header(default
     request_id = x_request_id or uuid.uuid4().hex[:12]
     prompt = ingest.EXTRACT_PROMPT.format(raw=raw)
     started = time.perf_counter()
-    logger.info(
-        "ingest.preview.start request_id=%s raw_len=%s prompt_len=%s",
-        request_id,
-        len(raw),
-        len(prompt),
-    )
+    logger.info(f"ingest.preview.start request_id={request_id} raw_len={len(raw)} prompt_len={len(prompt)}")
 
     def gen():
         chunk_count = 0
@@ -71,19 +71,13 @@ def ingest_preview(req: PreviewReq, x_request_id: Optional[str] = Header(default
                 char_count += len(delta)
                 yield delta
             logger.info(
-                "ingest.preview.done request_id=%s chunks=%s chars=%s elapsed_ms=%s",
-                request_id,
-                chunk_count,
-                char_count,
-                int((time.perf_counter() - started) * 1000),
+                f"ingest.preview.done request_id={request_id} chunks={chunk_count} chars={char_count} "
+                f"elapsed_ms={int((time.perf_counter() - started) * 1000)}"
             )
         except Exception:
             logger.exception(
-                "ingest.preview.error request_id=%s chunks=%s chars=%s elapsed_ms=%s",
-                request_id,
-                chunk_count,
-                char_count,
-                int((time.perf_counter() - started) * 1000),
+                f"ingest.preview.error request_id={request_id} chunks={chunk_count} chars={char_count} "
+                f"elapsed_ms={int((time.perf_counter() - started) * 1000)}"
             )
             yield f"\n[ERROR] {stream_error_text(request_id)}"
 
@@ -185,22 +179,16 @@ def ingest_preview_batch(req: PreviewBatchReq):
                     "record": batch_case_record(i, rec, case),
                 }
             )
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
             logger.info(
-                "ingest.preview_batch.item.done request_id=%s index=%s chunks=%s chars=%s elapsed_ms=%s",
-                request_id,
-                i,
-                chunk_count,
-                len(acc),
-                int((time.perf_counter() - started) * 1000),
+                f"ingest.preview_batch.item.done request_id={request_id} index={i} "
+                f"chunks={chunk_count} chars={len(acc)} elapsed_ms={elapsed_ms}"
             )
         except Exception:
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
             logger.exception(
-                "ingest.preview_batch.item.error request_id=%s index=%s chunks=%s chars=%s elapsed_ms=%s",
-                request_id,
-                i,
-                chunk_count,
-                len(acc),
-                int((time.perf_counter() - started) * 1000),
+                f"ingest.preview_batch.item.error request_id={request_id} index={i} "
+                f"chunks={chunk_count} chars={len(acc)} elapsed_ms={elapsed_ms}"
             )
             out.put(
                 {
@@ -236,14 +224,12 @@ def ingest_preview_batch(req: PreviewBatchReq):
             for fut in futures:
                 fut.result()
         logger.info(
-            "ingest.preview_batch.done request_id=%s records=%s ok=%s failed=%s elapsed_ms=%s",
-            request_id,
-            len(records),
-            ok,
-            failed,
-            int((time.perf_counter() - started) * 1000),
+            f"ingest.preview_batch.done request_id={request_id} records={len(records)} ok={ok} "
+            f"failed={failed} elapsed_ms={int((time.perf_counter() - started) * 1000)}"
         )
-        yield ndjson({"type": "summary", "request_id": request_id, "count": len(records), "ok": ok, "failed": failed})
+        yield ndjson(
+            {"type": "summary", "request_id": request_id, "count": len(records), "ok": ok, "failed": failed}
+        )
 
     return StreamingResponse(
         gen(),

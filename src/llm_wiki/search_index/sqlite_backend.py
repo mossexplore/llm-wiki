@@ -77,7 +77,9 @@ class SqliteSearch(SearchBackend):
             ),
         )
         rid = cur.lastrowid
-        body = "\n".join(filter(None, [case.get("background", ""), case.get("diagnosis", ""), case.get("solution", "")]))
+        body = "\n".join(
+            filter(None, [case.get("background", ""), case.get("diagnosis", ""), case.get("solution", "")])
+        )
         conn.execute(
             "INSERT INTO t_cases_fts(rowid, title, signatures_text, components, body) VALUES(?,?,?,?,?)",
             (rid, case.get("title", ""), "\n".join(sigs), "\n".join(comps), body),
@@ -165,7 +167,9 @@ class SqliteSearch(SearchBackend):
             if matched:
                 hits = []
                 for cid, sigs in matched.items():
-                    r = conn.execute("SELECT title, file, status, confidence, solution FROM t_cases WHERE id=?", (cid,)).fetchone()
+                    r = conn.execute(
+                        "SELECT title, file, status, confidence, solution FROM t_cases WHERE id=?", (cid,)
+                    ).fetchone()
                     if not r:
                         continue
                     title, file, status, confidence, solution = r

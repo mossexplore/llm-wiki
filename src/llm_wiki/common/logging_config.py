@@ -30,7 +30,10 @@ def setup_logging() -> pathlib.Path:
     root.setLevel(logging.INFO)
 
     app_log = str(log_dir / "app.log")
-    has_app_file = any(isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", None) == app_log for h in root.handlers)
+    has_app_file = any(
+        isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", None) == app_log
+        for h in root.handlers
+    )
     if not has_app_file:
         root.addHandler(_handler(log_dir / "app.log", fmt))
 
@@ -38,7 +41,10 @@ def setup_logging() -> pathlib.Path:
     access.setLevel(logging.INFO)
     access.propagate = False
     access_log = str(log_dir / "access.log")
-    has_access_file = any(isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", None) == access_log for h in access.handlers)
+    has_access_file = any(
+        isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", None) == access_log
+        for h in access.handlers
+    )
     if not has_access_file:
         access.addHandler(_handler(log_dir / "access.log", fmt))
 

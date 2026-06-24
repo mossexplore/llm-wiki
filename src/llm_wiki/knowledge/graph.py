@@ -130,13 +130,17 @@ def build_graph() -> dict:
     for a, b in itertools.combinations(case_ids, 2):
         am = doc_meta.get(a, {})
         bm = doc_meta.get(b, {})
-        shared = (set(am.get("tags", [])) & set(bm.get("tags", []))) | (set(am.get("components", [])) & set(bm.get("components", [])))
+        shared = (set(am.get("tags", [])) & set(bm.get("tags", []))) | (
+            set(am.get("components", [])) & set(bm.get("components", []))
+        )
         if shared:
             add_edge(edges, a, b, "similar")
 
     return {
         "nodes": sorted(nodes.values(), key=lambda n: (n["type"], n["id"])),
-        "edges": [{"source": source, "target": target, "type": kind} for source, target, kind in sorted(edges)],
+        "edges": [
+            {"source": source, "target": target, "type": kind} for source, target, kind in sorted(edges)
+        ],
     }
 
 

@@ -45,7 +45,9 @@ def test_add_message_increments_seq_and_returns_row():
         s["id"],
         "assistant",
         "答",
-        MessageMetrics(answer_source="wiki", retrieval_mode="exact", refs=[{"file": "a.md", "title": "A"}], total_ms=12),
+        MessageMetrics(
+            answer_source="wiki", retrieval_mode="exact", refs=[{"file": "a.md", "title": "A"}], total_ms=12
+        ),
     )
     assert m1["seq"] == 1
     assert m2["seq"] == 2

@@ -114,7 +114,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for name, typ in MESSAGE_LATENCY_COLUMNS.items():
         if name not in cols:
             conn.execute(f"ALTER TABLE t_chat_messages ADD COLUMN {name} {typ}")
-    old_feedback = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='t_chat_feedback'").fetchone()
+    old_feedback = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='t_chat_feedback'"
+    ).fetchone()
     if old_feedback:
         conn.execute("DROP TABLE t_chat_feedback")
 

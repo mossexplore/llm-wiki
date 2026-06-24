@@ -86,11 +86,8 @@ def chat_clear_sessions(user_id: Optional[str] = None):
     user_id = (user_id or "").strip() or None
     deleted = chat_store.clear_sessions(user_id=user_id)
     logger.info(
-        "chat.sessions.clear user_id=%s sessions=%s messages=%s feedback=%s",
-        user_id or "*",
-        deleted["sessions"],
-        deleted["messages"],
-        deleted["feedback"],
+        f"chat.sessions.clear user_id={user_id or '*'} sessions={deleted['sessions']} "
+        f"messages={deleted['messages']} feedback={deleted['feedback']}"
     )
     return success({"ok": True, "deleted": deleted})
 
@@ -160,14 +157,9 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             mode = decision["mode"]
             refs = decision["refs"]
             logger.info(
-                "chat.send.retrieved session_id=%s request_id=%s source=%s mode=%s refs=%s retrieval_ms=%s elapsed_ms=%s",
-                session_id,
-                request_id,
-                source,
-                mode,
-                len(refs),
-                retrieval_ms,
-                int((time.perf_counter() - started) * 1000),
+                f"chat.send.retrieved session_id={session_id} request_id={request_id} "
+                f"source={source} mode={mode} refs={len(refs)} retrieval_ms={retrieval_ms} "
+                f"elapsed_ms={int((time.perf_counter() - started) * 1000)}"
             )
             yield ndjson(
                 {
@@ -183,12 +175,9 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             messages = agent.build_answer_messages(text, decision)
             prompt_stats = agent.message_stats(messages)
             logger.info(
-                "chat.send.prompt session_id=%s request_id=%s message_count=%s char_count=%s message_lengths=%s",
-                session_id,
-                request_id,
-                prompt_stats["message_count"],
-                prompt_stats["char_count"],
-                prompt_stats["message_lengths"],
+                f"chat.send.prompt session_id={session_id} request_id={request_id} "
+                f"message_count={prompt_stats['message_count']} char_count={prompt_stats['char_count']} "
+                f"message_lengths={prompt_stats['message_lengths']}"
             )
             stream = agent.stream_messages(messages)
             model_request_start_ms = int((time.perf_counter() - started) * 1000)
@@ -207,13 +196,9 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 }
             )
             logger.info(
-                "chat.send.model_stream.start session_id=%s request_id=%s source=%s mode=%s retrieval_ms=%s elapsed_ms=%s",
-                session_id,
-                request_id,
-                source,
-                mode,
-                retrieval_ms,
-                int((time.perf_counter() - started) * 1000),
+                f"chat.send.model_stream.start session_id={session_id} request_id={request_id} "
+                f"source={source} mode={mode} retrieval_ms={retrieval_ms} "
+                f"elapsed_ms={int((time.perf_counter() - started) * 1000)}"
             )
             for delta in stream:
                 if first_delta_ms is None:
@@ -234,13 +219,9 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                         }
                     )
                     logger.info(
-                        "chat.send.first_delta session_id=%s request_id=%s source=%s mode=%s retrieval_ms=%s first_delta_ms=%s",
-                        session_id,
-                        request_id,
-                        source,
-                        mode,
-                        retrieval_ms,
-                        first_delta_ms,
+                        f"chat.send.first_delta session_id={session_id} request_id={request_id} "
+                        f"source={source} mode={mode} retrieval_ms={retrieval_ms} "
+                        f"first_delta_ms={first_delta_ms}"
                     )
                 acc += delta
                 yield ndjson({"type": "delta", "request_id": request_id, "text": delta})
@@ -283,17 +264,9 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 }
             )
             logger.info(
-                "chat.send.done session_id=%s request_id=%s source=%s mode=%s chars=%s "
-                "retrieval_ms=%s model_wait_ms=%s first_delta_ms=%s total_ms=%s",
-                session_id,
-                request_id,
-                source,
-                mode,
-                len(acc),
-                retrieval_ms,
-                model_wait_ms,
-                first_delta_ms,
-                total_ms,
+                f"chat.send.done session_id={session_id} request_id={request_id} source={source} "
+                f"mode={mode} chars={len(acc)} retrieval_ms={retrieval_ms} model_wait_ms={model_wait_ms} "
+                f"first_delta_ms={first_delta_ms} total_ms={total_ms}"
             )
         except Exception:
             logger.exception("chat.send.error session_id=%s request_id=%s", session_id, request_id)
