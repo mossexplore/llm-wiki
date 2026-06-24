@@ -19,12 +19,11 @@ MESSAGE_LATENCY_COLUMNS = {
     "total_ms": "INTEGER",
     "message_count": "INTEGER",
     "prompt_chars": "INTEGER",
-    "history_messages": "INTEGER",
 }
 CHAT_COLUMN_DEFINITIONS = {
     "t_chat_sessions": {"user_id": "TEXT", "source_code": "TEXT NOT NULL DEFAULT 'web'"},
     "t_chat_messages": {"user_id": "TEXT"},
-    "t_chat_feedbacks": {"user_id": "TEXT"},
+    "t_chat_feedbacks": {"user_id": "TEXT", "feedback": "TEXT"},
 }
 
 
@@ -80,6 +79,7 @@ class SqliteChatStore(BaseChatStore):
             return
         conn = self._connect()
         try:
+            _rebuild_feedbacks_if_needed(conn)
             conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
             _migrate(conn)
             conn.commit()
@@ -99,12 +99,16 @@ def _add_columns(conn: sqlite3.Connection, table: str, columns: dict) -> None:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """轻量迁移运行库:补齐新增运营字段,保留已有对话数据。"""
+    _rebuild_feedbacks_if_needed(conn)
     for table, columns in CHAT_COLUMN_DEFINITIONS.items():
         _add_columns(conn, table, columns)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON t_chat_sessions(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_source ON t_chat_sessions(source_code)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user ON t_chat_messages(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_user ON t_chat_feedbacks(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_feedback ON t_chat_feedbacks(feedback)")
+    conn.execute("UPDATE t_chat_feedbacks SET feedback='like' WHERE feedback='up'")
+    conn.execute("UPDATE t_chat_feedbacks SET feedback='dislike' WHERE feedback='down'")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(t_chat_messages)").fetchall()}
     for name, typ in MESSAGE_LATENCY_COLUMNS.items():
         if name not in cols:
@@ -113,10 +117,29 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='t_chat_feedback'"
     ).fetchone()
     if old_feedback:
-        conn.execute(
-            """INSERT OR IGNORE INTO t_chat_feedbacks
-               (id, message_id, session_id, rating, reason, created_at, updated_at)
-               SELECT id, message_id, session_id, rating, reason, created_at, updated_at
-               FROM t_chat_feedback"""
-        )
         conn.execute("DROP TABLE t_chat_feedback")
+
+
+def _rebuild_feedbacks_if_needed(conn: sqlite3.Connection) -> None:
+    conn.execute("DROP TABLE IF EXISTS t_chat_feedback")
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(t_chat_feedbacks)").fetchall()}
+    if "rating" not in cols and "feedback" in cols:
+        return
+    conn.execute("DROP TABLE IF EXISTS t_chat_feedbacks")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS t_chat_feedbacks (
+          id          TEXT PRIMARY KEY,
+          message_id  TEXT NOT NULL UNIQUE,
+          session_id  TEXT NOT NULL,
+          user_id     TEXT,
+          feedback    TEXT NOT NULL,
+          reason      TEXT,
+          created_at  TEXT NOT NULL,
+          updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_feedback ON t_chat_feedbacks(feedback);
+        CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_session ON t_chat_feedbacks(session_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_user ON t_chat_feedbacks(user_id);
+        """
+    )

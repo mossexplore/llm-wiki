@@ -1,3 +1,4 @@
+import json
 import time
 import uuid
 from typing import Optional
@@ -17,12 +18,52 @@ from ..utils import ndjson
 
 router = APIRouter()
 
+FEEDBACK_INFO_TYPE_LABELS = {
+    "not_helpful": "回答没有用",
+    "misunderstood_intent": "没有理解我的意图",
+    "incorrect_information": "信息/数据有误",
+}
+
 
 def session_title(text: str) -> str:
     """用首条提问生成会话标题:取首行前 20 字。"""
     line = (text or "").strip().splitlines()[0] if (text or "").strip() else "新会话"
     line = line.strip() or "新会话"
     return line[:20] + ("…" if len(line) > 20 else "")
+
+
+def normalize_feedback(value: Optional[str]) -> Optional[str]:
+    feedback = (value or "").strip().lower()
+    if feedback == "like":
+        return "like"
+    if feedback == "dislike":
+        return "dislike"
+    if feedback in ("none", "cancel", "clear"):
+        return "none"
+    return None
+
+
+def feedback_reason_json(reason) -> Optional[str]:
+    if reason is None:
+        return None
+    if isinstance(reason, str):
+        return reason.strip() or None
+
+    info = (reason.feedback_info or "").strip()
+    types = []
+    seen = set()
+    for item in reason.feedback_info_types or []:
+        key = (item or "").strip()
+        if key and key in FEEDBACK_INFO_TYPE_LABELS and key not in seen:
+            types.append(key)
+            seen.add(key)
+    if not info and not types:
+        return None
+    return json.dumps(
+        {"feedback_info": info, "feedback_info_types": types},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 @router.post("/api/chat/sessions")
@@ -80,9 +121,9 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
     if not chat_store.session_exists(session_id, user_id=user_id):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
 
-    has_history = chat_store.has_messages(session_id)
+    has_messages = chat_store.has_messages(session_id)
     chat_store.add_message(session_id, "user", text, user_id=user_id)
-    if not has_history:
+    if not has_messages:
         try:
             chat_store.rename_session(session_id, session_title(text))
         except Exception:
@@ -99,7 +140,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
         first_delta_ms = None
         model_wait_ms = None
         model_request_start_ms = None
-        prompt_stats = {"message_count": None, "char_count": None, "history_messages": None}
+        prompt_stats = {"message_count": None, "char_count": None}
         try:
             yield ndjson({
                 "type": "status", "request_id": request_id, "stage": "retrieving",
@@ -121,12 +162,12 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 "source": source, "mode": mode, "refs": refs,
                 "retrieval_ms": retrieval_ms,
             })
-            messages = agent.build_answer_messages(text, None, decision)
+            messages = agent.build_answer_messages(text, decision)
             prompt_stats = agent.message_stats(messages)
             logger.info(
-                "chat.send.prompt session_id=%s request_id=%s message_count=%s char_count=%s history_messages=%s message_lengths=%s",
+                "chat.send.prompt session_id=%s request_id=%s message_count=%s char_count=%s message_lengths=%s",
                 session_id, request_id, prompt_stats["message_count"], prompt_stats["char_count"],
-                prompt_stats["history_messages"], prompt_stats["message_lengths"],
+                prompt_stats["message_lengths"],
             )
             stream = agent.stream_messages(messages)
             model_request_start_ms = int((time.perf_counter() - started) * 1000)
@@ -135,7 +176,6 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 "source": source, "mode": mode, "retrieval_ms": retrieval_ms,
                 "message_count": prompt_stats["message_count"],
                 "prompt_chars": prompt_stats["char_count"],
-                "history_messages": prompt_stats["history_messages"],
                 "model_start_ms": model_request_start_ms,
                 "elapsed_ms": model_request_start_ms,
             })
@@ -176,7 +216,6 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     total_ms=total_ms,
                     message_count=prompt_stats["message_count"],
                     prompt_chars=prompt_stats["char_count"],
-                    history_messages=prompt_stats["history_messages"],
                 ),
                 user_id=user_id,
             )
@@ -190,7 +229,6 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 "total_ms": total_ms,
                 "message_count": prompt_stats["message_count"],
                 "prompt_chars": prompt_stats["char_count"],
-                "history_messages": prompt_stats["history_messages"],
             })
             logger.info(
                 "chat.send.done session_id=%s request_id=%s source=%s mode=%s chars=%s "
@@ -212,7 +250,6 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                             total_ms=int((time.perf_counter() - started) * 1000),
                             message_count=prompt_stats.get("message_count"),
                             prompt_chars=prompt_stats.get("char_count"),
-                            history_messages=prompt_stats.get("history_messages"),
                         ),
                         user_id=user_id,
                     )
@@ -232,7 +269,8 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 
 @router.post("/api/chat/messages/{message_id}/feedback")
 def chat_feedback(message_id: str, req: FeedbackReq):
-    if req.rating not in ("up", "down"):
+    feedback = normalize_feedback(req.feedback)
+    if feedback not in ("like", "dislike", "none"):
         raise_api_error(ErrorCode.CHAT_FEEDBACK_INVALID_RATING)
     req_user_id = (req.user_id or "").strip() or None
     msg = chat_store.message_exists(message_id, user_id=req_user_id)   # 传 user_id 时要求消息归属该用户
@@ -240,8 +278,11 @@ def chat_feedback(message_id: str, req: FeedbackReq):
         raise_api_error(ErrorCode.CHAT_MESSAGE_NOT_FOUND)
     if msg["role"] != "assistant":
         raise_api_error(ErrorCode.CHAT_FEEDBACK_ASSISTANT_ONLY)
-    reason = (req.reason or "").strip() or None
-    if req.rating == "down" and not reason:
+    if feedback == "none":
+        chat_store.clear_feedback(message_id)
+        return success({"ok": True, "message_id": message_id, "feedback": None, "reason": None})
+    reason = feedback_reason_json(req.reason)
+    if feedback == "dislike" and not reason:
         raise_api_error(ErrorCode.CHAT_FEEDBACK_REASON_REQUIRED)
     user_id = req_user_id or msg.get("user_id")
-    return success(chat_store.set_feedback(message_id, msg["session_id"], req.rating, reason, user_id))
+    return success(chat_store.set_feedback(message_id, msg["session_id"], feedback, reason, user_id))

@@ -276,13 +276,12 @@
               stage: 'done',
               retrieval_ms: ev.retrieval_ms,
               model_start_ms: ev.model_start_ms,
-              model_wait_ms: ev.model_wait_ms,
-              first_delta_ms: ev.first_delta_ms,
-              total_ms: ev.total_ms,
-              message_count: ev.message_count,
-              prompt_chars: ev.prompt_chars,
-              history_messages: ev.history_messages
-            });
+	              model_wait_ms: ev.model_wait_ms,
+	              first_delta_ms: ev.first_delta_ms,
+	              total_ms: ev.total_ms,
+	              message_count: ev.message_count,
+	              prompt_chars: ev.prompt_chars
+	            });
           } else if (ev.type === 'error') {
             errored = ev.error || '生成失败';
           }
@@ -306,11 +305,10 @@
           model_wait_ms: doneMeta && doneMeta.model_wait_ms,
           first_delta_ms: doneMeta && doneMeta.first_delta_ms,
           total_ms: doneMeta && doneMeta.total_ms,
-          elapsed_ms: doneMeta && doneMeta.total_ms,
-          message_count: doneMeta && doneMeta.message_count,
-          prompt_chars: doneMeta && doneMeta.prompt_chars,
-          history_messages: doneMeta && doneMeta.history_messages,
-        });
+	          elapsed_ms: doneMeta && doneMeta.total_ms,
+	          message_count: doneMeta && doneMeta.message_count,
+	          prompt_chars: doneMeta && doneMeta.prompt_chars,
+	        });
       }
       state.chatStreamText = '';
       state.chatStreamMeta = null;
@@ -365,33 +363,122 @@
       }
     }
 
-    async function chatFeedback(messageId, rating) {
+    const FEEDBACK_INFO_TYPES = [
+      { value: 'not_helpful', label: '回答没有用' },
+      { value: 'misunderstood_intent', label: '没有理解我的意图' },
+      { value: 'incorrect_information', label: '信息/数据有误' },
+    ];
+
+    function feedbackReasonSummary(reason) {
+      const raw = String(reason || '').trim();
+      if (!raw) return '';
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const labels = (parsed.feedback_info_types || [])
+            .map(v => (FEEDBACK_INFO_TYPES.find(t => t.value === v) || {}).label || v)
+            .filter(Boolean);
+          const info = String(parsed.feedback_info || '').trim();
+          return labels.concat(info ? [info] : []).join(' / ');
+        }
+      } catch (_) {}
+      return raw;
+    }
+
+    function feedbackReasonModal() {
+      return new Promise(resolve => {
+        const mask = document.createElement('div');
+        mask.className = 'modal-mask';
+        mask.innerHTML =
+          '<div class="modal-box feedback-modal" role="dialog" aria-modal="true">' +
+            '<div class="modal-head"><div class="modal-title">反馈:这条回答不太好</div></div>' +
+            '<div class="modal-msg">请选择原因,也可以补充具体说明:</div>' +
+            '<div class="feedback-type-row">' +
+              FEEDBACK_INFO_TYPES.map(t =>
+                '<button class="feedback-type-btn" type="button" data-type="' + escapeHtml(t.value) + '" aria-pressed="false">' +
+                  escapeHtml(t.label) +
+                '</button>'
+              ).join('') +
+            '</div>' +
+            '<textarea class="field mono" data-act="input" placeholder="例如:解决方案不适用 / 来源不相关 / 有事实错误…" style="height:88px;margin-top:12px"></textarea>' +
+            '<div class="modal-actions">' +
+              '<button class="btn" data-act="cancel">取消</button>' +
+              '<button class="btn primary" data-act="ok">提交点踩</button>' +
+            '</div>' +
+          '</div>';
+        const input = mask.querySelector('[data-act="input"]');
+        const typeBtns = Array.from(mask.querySelectorAll('[data-type]'));
+        function selectedTypes() {
+          return typeBtns.filter(btn => btn.classList.contains('on')).map(btn => btn.dataset.type);
+        }
+        function close(v) {
+          mask.classList.remove('show');
+          document.removeEventListener('keydown', onKey);
+          setTimeout(() => mask.remove(), 160);
+          resolve(v);
+        }
+        function submit() {
+          const info = input.value.trim();
+          const types = selectedTypes();
+          if (!info && !types.length) {
+            input.focus();
+            showToast('请选择或填写点踩原因');
+            return;
+          }
+          close({ feedback_info: info, feedback_info_types: types });
+        }
+        function onKey(e) {
+          if (e.key === 'Escape') close(null);
+          else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit();
+        }
+        mask.addEventListener('click', e => { if (e.target === mask) close(null); });
+        typeBtns.forEach(btn => {
+          btn.onclick = () => {
+            const on = !btn.classList.contains('on');
+            btn.classList.toggle('on', on);
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+          };
+        });
+        mask.querySelector('[data-act="cancel"]').onclick = () => close(null);
+        mask.querySelector('[data-act="ok"]').onclick = submit;
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(mask);
+        requestAnimationFrame(() => mask.classList.add('show'));
+        typeBtns[0].focus();
+      });
+    }
+
+    async function chatFeedback(messageId, feedback) {
       if (!messageId || String(messageId).startsWith('local-')) {
         showToast('该回复未落库,无法反馈');
         return;
       }
+      const msg = state.chatMessages.find(m => m.id === messageId);
+      const clearing = msg && msg.feedback === feedback;
       let reason = null;
-      if (rating === 'down') {
-        reason = await promptModal({
-          title: '反馈:这条回答不太好',
-          message: '请告诉我们哪里不对(便于改进知识库与答案质量):',
-          placeholder: '例如:解决方案不适用 / 来源不相关 / 有事实错误…',
-          confirmText: '提交点踩', required: true,
-        });
+      if (feedback === 'dislike' && !clearing) {
+        reason = await feedbackReasonModal();
         if (reason === null) return;     // 用户取消
       }
       try {
+        const payload = clearing
+          ? { feedback: 'none' }
+          : feedback === 'like'
+          ? { feedback: 'like' }
+          : { feedback: 'dislike', reason };
         const r = await fetch('/api/chat/messages/' + encodeURIComponent(messageId) + '/feedback', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rating, reason })
+          body: JSON.stringify(payload)
         });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法反馈'); return; }
         const data = await r.json();
         if (!r.ok) throw new Error(apiErrorMessage(data, '反馈失败'));
-        const msg = state.chatMessages.find(m => m.id === messageId);
-        if (msg) { msg.feedback_rating = rating; msg.feedback_reason = reason; }
+        if (msg) {
+          msg.feedback = clearing ? null : feedback;
+          msg.feedback_reason = clearing ? null : (reason ? JSON.stringify(reason) : null);
+        }
         render();
-        showToast(rating === 'up' ? '已点赞,谢谢反馈' : '已记录,谢谢反馈');
+        showToast(clearing ? '已取消反馈' : (feedback === 'like' ? '已点赞,谢谢反馈' : '已记录,谢谢反馈'));
       } catch (e) { showToast(String(e && e.message || e)); }
     }
 
@@ -426,11 +513,10 @@
         retrieval_ms: retrieval !== null ? retrieval : (total === null ? legacyElapsed : null),
         model_wait_ms: _num(m.model_wait_ms),
         first_delta_ms: _num(m.first_delta_ms),
-        total_ms: total,
-        message_count: _num(m.message_count),
-        prompt_chars: _num(m.prompt_chars),
-        history_messages: _num(m.history_messages)
-      };
+	        total_ms: total,
+	        message_count: _num(m.message_count),
+	        prompt_chars: _num(m.prompt_chars)
+	      };
       return Object.values(st).some(v => typeof v === 'number') ? st : null;
     }
 
@@ -444,10 +530,10 @@
         done: '已完成'
       };
       const bits = ['<span>' + escapeHtml(labels[st.stage] || '处理中') + '</span>'];
-      if (typeof st.retrieval_ms === 'number') bits.push('<span>检索 ' + fmtMs(st.retrieval_ms) + '</span>');
-      if (typeof st.message_count === 'number' || typeof st.prompt_chars === 'number') {
-        bits.push('<span>上下文 ' + (st.message_count || '—') + '条/' + (st.prompt_chars || 0) + '字</span>');
-      }
+	      if (typeof st.retrieval_ms === 'number') bits.push('<span>检索 ' + fmtMs(st.retrieval_ms) + '</span>');
+	      if (typeof st.message_count === 'number' || typeof st.prompt_chars === 'number') {
+	        bits.push('<span>提示 ' + (st.message_count || '—') + '条/' + (st.prompt_chars || 0) + '字</span>');
+	      }
       if (typeof st.model_wait_ms === 'number') bits.push('<span>模型等待 ' + fmtMs(st.model_wait_ms) + '</span>');
       if (typeof st.first_delta_ms === 'number') bits.push('<span>首字 ' + fmtMs(st.first_delta_ms) + '</span>');
       else if (st.stage === 'generating') {
@@ -554,9 +640,10 @@
       }
       const refsHtml = chatRefsHtml(m.refs);
       const latency = chatMessageLatencyStatus(m);
-      const fbUp = m.feedback_rating === 'up' ? ' on' : '';
-      const fbDown = m.feedback_rating === 'down' ? ' on down' : '';
+      const fbUp = m.feedback === 'like' ? ' on' : '';
+      const fbDown = m.feedback === 'dislike' ? ' on dislike' : '';
       const isLocal = String(m.id || '').startsWith('local-');
+      const fbReason = feedbackReasonSummary(m.feedback_reason);
       return '<div class="chat-row agent">' +
         '<div class="chat-avatar">' + iconChat() + '</div>' +
         '<div class="chat-bubble agent">' +
@@ -566,9 +653,9 @@
           (isLocal ? '' :
           '<div class="chat-acts">' +
             '<button class="chat-act" data-copy="' + encodeURIComponent(m.content) + '" title="复制">' + iconCopy() + '</button>' +
-            '<button class="chat-act' + fbUp + '" data-fb="up" data-mid="' + escapeHtml(m.id) + '" title="点赞">' + iconUp() + '</button>' +
-            '<button class="chat-act' + fbDown + '" data-fb="down" data-mid="' + escapeHtml(m.id) + '" title="点踩">' + iconDown() + '</button>' +
-            (m.feedback_rating === 'down' && m.feedback_reason ? '<span class="chat-fb-reason" title="点踩原因">' + escapeHtml(m.feedback_reason) + '</span>' : '') +
+            '<button class="chat-act' + fbUp + '" data-fb="like" data-mid="' + escapeHtml(m.id) + '" title="点赞">' + iconUp() + '</button>' +
+            '<button class="chat-act' + fbDown + '" data-fb="dislike" data-mid="' + escapeHtml(m.id) + '" title="点踩">' + iconDown() + '</button>' +
+            (m.feedback === 'dislike' && fbReason ? '<span class="chat-fb-reason" title="点踩原因">' + escapeHtml(fbReason) + '</span>' : '') +
           '</div>') +
         '</div>' +
       '</div>';

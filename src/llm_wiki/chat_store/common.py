@@ -42,4 +42,3 @@ class MessageMetrics:
     total_ms: int | None = None
     message_count: int | None = None
     prompt_chars: int | None = None
-    history_messages: int | None = None

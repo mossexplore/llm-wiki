@@ -44,7 +44,6 @@ CREATE TABLE IF NOT EXISTS t_chat_messages (
   total_ms         INTEGER COMMENT '仅 assistant: 从后端开始处理到回复完成并落库的总耗时毫秒',
   message_count    INTEGER COMMENT '仅 assistant: 本轮发送给模型的 messages 数',
   prompt_chars     INTEGER COMMENT '仅 assistant: 本轮发送给模型的总字符数',
-  history_messages INTEGER COMMENT '仅 assistant: 本轮注入的历史消息数',
   created_at       VARCHAR(40) NOT NULL COMMENT 'ISO 时间, 消息创建时刻',
   INDEX idx_chat_messages_session (session_id, seq),
   INDEX idx_chat_messages_user (user_id)
@@ -55,11 +54,11 @@ CREATE TABLE IF NOT EXISTS t_chat_feedbacks (
   message_id  VARCHAR(64) NOT NULL UNIQUE COMMENT '关联 t_chat_messages.id, 一条消息最多一条反馈',
   session_id  VARCHAR(64) NOT NULL COMMENT '冗余保存会话 id, 便于按会话聚合统计',
   user_id     VARCHAR(64) COMMENT '用户 id, 标识该反馈归属的用户',
-  rating      VARCHAR(16) NOT NULL COMMENT '反馈类型, up 为点赞, down 为点踩',
-  reason      TEXT COMMENT '点踩原因, 点赞时为空',
+  feedback    VARCHAR(16) NOT NULL COMMENT '反馈类型, like 为点赞, dislike 为点踩',
+  reason      TEXT COMMENT '点踩原因:可为纯文本或结构化 JSON;点赞时为空',
   created_at  VARCHAR(40) NOT NULL COMMENT 'ISO 时间, 反馈创建时刻',
   updated_at  VARCHAR(40) NOT NULL COMMENT 'ISO 时间, 覆盖更新反馈时刷新',
-  INDEX idx_chat_feedbacks_rating (rating),
+  INDEX idx_chat_feedbacks_feedback (feedback),
   INDEX idx_chat_feedbacks_session (session_id),
   INDEX idx_chat_feedbacks_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

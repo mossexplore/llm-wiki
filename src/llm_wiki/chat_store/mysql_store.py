@@ -71,6 +71,7 @@ class MySQLChatStore(BaseChatStore):
                 run_mysql_schema(conn, MYSQL_SCHEMA_PATH)
                 _migrate_columns(conn)
                 _migrate_feedback_table(conn)
+                _migrate_feedback_columns(conn)
                 _ensure_default_session_source(conn)
             self._initialized = True
         except Exception:
@@ -134,13 +135,17 @@ def _migrate_feedback_table(conn) -> None:
         {"t": "t_chat_feedback"},
     ).mappings().one()["n"]
     if old_feedback:
-        conn.execute(_sql_text(
-            """INSERT IGNORE INTO t_chat_feedbacks
-               (id, message_id, session_id, rating, reason, created_at, updated_at)
-               SELECT id, message_id, session_id, rating, reason, created_at, updated_at
-               FROM t_chat_feedback"""
-        ))
         conn.execute(_sql_text("DROP TABLE t_chat_feedback"))
+
+
+def _migrate_feedback_columns(conn) -> None:
+    if _column_exists(conn, "t_chat_feedbacks", "rating") or not _column_exists(conn, "t_chat_feedbacks", "feedback"):
+        conn.execute(_sql_text("DROP TABLE t_chat_feedbacks"))
+        run_mysql_schema(conn, MYSQL_SCHEMA_PATH)
+        return
+    _add_index_if_missing(conn, "t_chat_feedbacks", "idx_chat_feedbacks_feedback", "feedback")
+    conn.execute(_sql_text("UPDATE t_chat_feedbacks SET feedback='like' WHERE feedback='up'"))
+    conn.execute(_sql_text("UPDATE t_chat_feedbacks SET feedback='dislike' WHERE feedback='down'"))
 
 
 def _ensure_default_session_source(conn) -> None:

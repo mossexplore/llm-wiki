@@ -134,7 +134,6 @@ def message_stats(messages: list[dict]) -> dict:
         "message_count": len(messages),
         "char_count": sum(item["chars"] for item in lengths),
         "message_lengths": lengths,
-        "history_messages": max(0, len(messages) - 2),
     }
 
 
@@ -161,11 +160,10 @@ def _chat_thinking_enabled() -> bool:
     return _bool_config(value, default=True)
 
 
-def build_answer_messages(text: str, history: list | None, decision: dict) -> list[dict]:
+def build_answer_messages(text: str, decision: dict) -> list[dict]:
     """构造本轮发给大模型的 messages。
 
     对话页面不做多轮上下文注入:每次请求只携带系统提示和本轮用户问题。
-    history 参数保留在函数签名中,兼容旧调用点,但不再写入 messages。
     """
     messages = [{"role": "system", "content": WIKI_PROMPT if decision.get("source") == "wiki" else CHAT_SYSTEM_PROMPT}]
     if decision.get("source") == "wiki":
@@ -183,9 +181,9 @@ def stream_messages(messages):
     stats = message_stats(messages)
     started = time.perf_counter()
     logger.info(
-        "agent.chat.request model=%s thinking_enabled=%s message_count=%s char_count=%s history_messages=%s message_lengths=%s",
+        "agent.chat.request model=%s thinking_enabled=%s message_count=%s char_count=%s message_lengths=%s",
         model, thinking_enabled, stats["message_count"], stats["char_count"],
-        stats["history_messages"], stats["message_lengths"],
+        stats["message_lengths"],
     )
     request_kwargs = {
         "model": model,
@@ -224,21 +222,11 @@ def _stream_chat(messages):
     yield from stream_messages(messages)
 
 
-def _history_messages(history: list | None) -> list:
-    out = []
-    for m in (history or []):
-        role = m.get("role")
-        content = m.get("content") or ""
-        if role in ("user", "assistant") and content:
-            out.append({"role": role, "content": content})
-    return out
-
-
-def stream_wiki_answer(text: str, history: list | None, decision: dict):
+def stream_wiki_answer(text: str, decision: dict):
     """命中知识库:把检索资料 + 自定义提示词喂给大模型,流式生成回答。"""
-    yield from stream_messages(build_answer_messages(text, history, decision))
+    yield from stream_messages(build_answer_messages(text, decision))
 
 
-def stream_llm_answer(text: str, history: list | None = None):
+def stream_llm_answer(text: str):
     """未命中知识库:不带资料,直接让大模型基于通用经验流式回答。"""
-    yield from stream_messages(build_answer_messages(text, history, {"source": "llm"}))
+    yield from stream_messages(build_answer_messages(text, {"source": "llm"}))

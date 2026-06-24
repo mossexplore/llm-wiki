@@ -65,7 +65,6 @@ CREATE TABLE IF NOT EXISTS t_chat_messages (
   total_ms        INTEGER,               -- 仅 assistant：从后端开始处理到回复完成并落库的总耗时（毫秒）
   message_count   INTEGER,               -- 仅 assistant：本轮发送给模型的 messages 数
   prompt_chars    INTEGER,               -- 仅 assistant：本轮发送给模型的总字符数
-  history_messages INTEGER,              -- 仅 assistant：本轮注入的历史消息数（当前默认为 0）
   created_at      TEXT NOT NULL          -- ISO 时间
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON t_chat_messages(session_id, seq);
@@ -80,10 +79,10 @@ CREATE TABLE IF NOT EXISTS t_chat_feedbacks (
   message_id  TEXT NOT NULL UNIQUE,      -- 关联 t_chat_messages.id，一条消息一条反馈
   session_id  TEXT NOT NULL,             -- 冗余存一份，便于按会话聚合统计
   user_id     TEXT,                      -- 用户 id，标识该反馈归属的用户
-  rating      TEXT NOT NULL,             -- 'up'(点赞) | 'down'(点踩)
-  reason      TEXT,                      -- 点踩原因（点赞时为空）
+  feedback    TEXT NOT NULL,             -- 'like'(点赞) | 'dislike'(点踩)
+  reason      TEXT,                      -- 点踩原因:可为纯文本或结构化 JSON；点赞时为空
   created_at  TEXT NOT NULL,             -- ISO 时间
   updated_at  TEXT NOT NULL              -- ISO 时间，覆盖更新时刷新
 );
-CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_rating ON t_chat_feedbacks(rating);
+CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_feedback ON t_chat_feedbacks(feedback);
 CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_session ON t_chat_feedbacks(session_id);

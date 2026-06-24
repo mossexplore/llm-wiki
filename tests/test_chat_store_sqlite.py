@@ -57,11 +57,11 @@ def test_get_messages_order_and_refs_and_feedback():
     store.add_message(s["id"], "user", "q")
     a = store.add_message(s["id"], "assistant", "a",
                           MessageMetrics(refs=[{"file": "x.md", "title": "X"}]))
-    store.set_feedback(a["id"], s["id"], "up")
+    store.set_feedback(a["id"], s["id"], "like")
     msgs = store.get_messages(s["id"])
     assert [m["seq"] for m in msgs] == [1, 2]
     assert msgs[1]["refs"] == [{"file": "x.md", "title": "X"}]
-    assert msgs[1]["feedback_rating"] == "up"
+    assert msgs[1]["feedback"] == "like"
 
 
 def test_has_messages_and_session_exists():
@@ -105,11 +105,21 @@ def test_rename_session():
 def test_set_feedback_insert_then_overwrite():
     s = store.create_session()
     a = store.add_message(s["id"], "assistant", "a")
-    f1 = store.set_feedback(a["id"], s["id"], "up")
-    f2 = store.set_feedback(a["id"], s["id"], "down", reason="不准")
+    f1 = store.set_feedback(a["id"], s["id"], "like")
+    f2 = store.set_feedback(a["id"], s["id"], "dislike", reason="不准")
     assert f1["id"] == f2["id"]
-    assert f2["rating"] == "down"
+    assert f2["feedback"] == "dislike"
     assert f2["reason"] == "不准"
+
+
+def test_clear_feedback_removes_feedback_row():
+    s = store.create_session()
+    a = store.add_message(s["id"], "assistant", "a")
+    store.set_feedback(a["id"], s["id"], "like")
+
+    assert store.clear_feedback(a["id"]) is True
+    assert store.clear_feedback(a["id"]) is False
+    assert store.get_messages(s["id"])[0]["feedback"] is None
 
 
 def test_message_exists():
@@ -124,7 +134,7 @@ def test_message_exists():
 def test_delete_session_removes_messages_and_feedback():
     s = store.create_session()
     a = store.add_message(s["id"], "assistant", "a")
-    store.set_feedback(a["id"], s["id"], "up")
+    store.set_feedback(a["id"], s["id"], "like")
     assert store.delete_session(s["id"]) is True
     assert store.delete_session(s["id"]) is False
     assert store.get_messages(s["id"]) == []
@@ -156,7 +166,7 @@ def test_message_exists_scoped_by_user():
 def test_clear_sessions_by_user_only_removes_that_user():
     s1 = store.create_session("u1", user_id="u1")
     store.add_message(s1["id"], "assistant", "a")
-    store.set_feedback(store.get_messages(s1["id"])[0]["id"], s1["id"], "up")
+    store.set_feedback(store.get_messages(s1["id"])[0]["id"], s1["id"], "like")
     s2 = store.create_session("u2", user_id="u2")
     store.add_message(s2["id"], "user", "q")
 
@@ -169,7 +179,7 @@ def test_clear_sessions_by_user_only_removes_that_user():
 def test_clear_sessions_returns_counts():
     s = store.create_session()
     a = store.add_message(s["id"], "assistant", "a")
-    store.set_feedback(a["id"], s["id"], "up")
+    store.set_feedback(a["id"], s["id"], "like")
     deleted = store.clear_sessions()
     assert deleted["sessions"] == 1
     assert deleted["messages"] == 1
@@ -179,7 +189,7 @@ def test_clear_sessions_returns_counts():
 def test_stats_shape():
     s = store.create_session()
     a = store.add_message(s["id"], "assistant", "a")
-    store.set_feedback(a["id"], s["id"], "up")
+    store.set_feedback(a["id"], s["id"], "like")
     st = store.stats()
     assert st["backend"] == "sqlite"
-    assert st["sessions"] == 1 and st["messages"] == 1 and st["up"] == 1
+    assert st["sessions"] == 1 and st["messages"] == 1 and st["like"] == 1

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -54,7 +54,12 @@ class ChatMessageReq(BaseModel):
     user_id: Optional[str] = None
 
 
+class FeedbackReasonReq(BaseModel):
+    feedback_info: str = ""
+    feedback_info_types: list[str] = Field(default_factory=list)
+
+
 class FeedbackReq(BaseModel):
-    rating: str
-    reason: Optional[str] = None
+    feedback: Optional[str] = None
+    reason: Optional[Union[str, FeedbackReasonReq]] = None
     user_id: Optional[str] = None

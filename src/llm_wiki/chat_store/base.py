@@ -17,10 +17,10 @@ from .common import MessageMetrics, new_id, now
 _INSERT_MESSAGE = """INSERT INTO t_chat_messages
    (id, session_id, user_id, seq, role, content, answer_source, retrieval_mode, refs,
     elapsed_ms, retrieval_ms, model_wait_ms, first_delta_ms, total_ms,
-    message_count, prompt_chars, history_messages, created_at)
+    message_count, prompt_chars, created_at)
    VALUES (:id,:session_id,:user_id,:seq,:role,:content,:answer_source,:retrieval_mode,:refs,
            :elapsed_ms,:retrieval_ms,:model_wait_ms,:first_delta_ms,:total_ms,
-           :message_count,:prompt_chars,:history_messages,:created_at)"""
+           :message_count,:prompt_chars,:created_at)"""
 
 
 class BaseChatStore:
@@ -134,7 +134,7 @@ class BaseChatStore:
                 "elapsed_ms": m.elapsed_ms, "retrieval_ms": m.retrieval_ms, "model_wait_ms": m.model_wait_ms,
                 "first_delta_ms": m.first_delta_ms, "total_ms": m.total_ms,
                 "message_count": m.message_count, "prompt_chars": m.prompt_chars,
-                "history_messages": m.history_messages, "created_at": ts,
+                "created_at": ts,
             })
             c.run("UPDATE t_chat_sessions SET updated_at=:ts WHERE id=:sid", {"ts": ts, "sid": session_id})
         return {
@@ -144,13 +144,17 @@ class BaseChatStore:
             "refs": m.refs or [], "elapsed_ms": m.elapsed_ms, "retrieval_ms": m.retrieval_ms,
             "model_wait_ms": m.model_wait_ms, "first_delta_ms": m.first_delta_ms, "total_ms": m.total_ms,
             "message_count": m.message_count, "prompt_chars": m.prompt_chars,
-            "history_messages": m.history_messages, "created_at": ts,
+            "created_at": ts,
         }
 
     def get_messages(self, session_id: str) -> list:
         with self._tx() as c:
             rows = c.all(
-                """SELECT m.*, f.rating AS feedback_rating, f.reason AS feedback_reason
+                """SELECT m.id, m.session_id, m.user_id, m.seq, m.role, m.content,
+                          m.answer_source, m.retrieval_mode, m.refs, m.elapsed_ms,
+                          m.retrieval_ms, m.model_wait_ms, m.first_delta_ms, m.total_ms,
+                          m.message_count, m.prompt_chars, m.created_at,
+                          f.feedback, f.reason AS feedback_reason
                    FROM t_chat_messages m
                    LEFT JOIN t_chat_feedbacks f ON f.message_id = m.id
                    WHERE m.session_id=:sid ORDER BY m.seq ASC""",
@@ -170,7 +174,7 @@ class BaseChatStore:
             )
 
     # --- 反馈 ---------------------------------------------------------------
-    def set_feedback(self, message_id: str, session_id: str, rating: str,
+    def set_feedback(self, message_id: str, session_id: str, feedback: str,
                      reason: str | None = None, user_id: str | None = None) -> dict:
         """记录一条反馈;同一消息重复反馈则覆盖。"""
         ts = now()
@@ -179,21 +183,26 @@ class BaseChatStore:
             if existing:
                 c.run(
                     """UPDATE t_chat_feedbacks
-                       SET user_id=COALESCE(:user_id, user_id), rating=:rating, reason=:reason, updated_at=:ts
+                       SET user_id=COALESCE(:user_id, user_id), feedback=:feedback, reason=:reason, updated_at=:ts
                        WHERE message_id=:mid""",
-                    {"user_id": user_id, "rating": rating, "reason": reason, "ts": ts, "mid": message_id},
+                    {"user_id": user_id, "feedback": feedback, "reason": reason, "ts": ts, "mid": message_id},
                 )
                 fid = existing["id"]
             else:
                 fid = new_id()
                 c.run(
                     """INSERT INTO t_chat_feedbacks
-                       (id, message_id, session_id, user_id, rating, reason, created_at, updated_at)
-                       VALUES (:id,:mid,:sid,:user_id,:rating,:reason,:created_at,:updated_at)""",
+                       (id, message_id, session_id, user_id, feedback, reason, created_at, updated_at)
+                       VALUES (:id,:mid,:sid,:user_id,:feedback,:reason,:created_at,:updated_at)""",
                     {"id": fid, "mid": message_id, "sid": session_id, "user_id": user_id,
-                     "rating": rating, "reason": reason, "created_at": ts, "updated_at": ts},
+                     "feedback": feedback, "reason": reason, "created_at": ts, "updated_at": ts},
                 )
-        return {"id": fid, "message_id": message_id, "user_id": user_id, "rating": rating, "reason": reason}
+        return {"id": fid, "message_id": message_id, "user_id": user_id, "feedback": feedback, "reason": reason}
+
+    def clear_feedback(self, message_id: str) -> bool:
+        """取消一条消息的反馈。"""
+        with self._tx() as c:
+            return c.run("DELETE FROM t_chat_feedbacks WHERE message_id=:mid", {"mid": message_id}) > 0
 
     def stats(self) -> dict:
         with self._tx() as c:
@@ -202,6 +211,6 @@ class BaseChatStore:
                 "db": self.label(),
                 "sessions": c.one("SELECT count(*) AS n FROM t_chat_sessions")["n"],
                 "messages": c.one("SELECT count(*) AS n FROM t_chat_messages")["n"],
-                "up": c.one("SELECT count(*) AS n FROM t_chat_feedbacks WHERE rating='up'")["n"],
-                "down": c.one("SELECT count(*) AS n FROM t_chat_feedbacks WHERE rating='down'")["n"],
+                "like": c.one("SELECT count(*) AS n FROM t_chat_feedbacks WHERE feedback='like'")["n"],
+                "dislike": c.one("SELECT count(*) AS n FROM t_chat_feedbacks WHERE feedback='dislike'")["n"],
             }

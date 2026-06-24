@@ -22,7 +22,7 @@ from .sqlite_store import SqliteChatStore
 __all__ = [
     "MessageMetrics", "create_session", "list_sessions", "session_exists", "has_messages",
     "rename_session", "delete_session", "clear_sessions", "add_message", "get_messages",
-    "message_exists", "set_feedback", "stats",
+    "message_exists", "set_feedback", "clear_feedback", "stats",
 ]
 
 _stores: dict = {}
@@ -78,9 +78,13 @@ def message_exists(message_id: str, user_id: str | None = None) -> dict | None:
     return _backend().message_exists(message_id, user_id)
 
 
-def set_feedback(message_id: str, session_id: str, rating: str, reason: str | None = None,
+def set_feedback(message_id: str, session_id: str, feedback: str, reason: str | None = None,
                  user_id: str | None = None) -> dict:
-    return _backend().set_feedback(message_id, session_id, rating, reason, user_id)
+    return _backend().set_feedback(message_id, session_id, feedback, reason, user_id)
+
+
+def clear_feedback(message_id: str) -> bool:
+    return _backend().clear_feedback(message_id)
 
 
 def stats() -> dict:
