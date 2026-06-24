@@ -10,6 +10,7 @@ search_index.py — 检索索引后端入口。
     python -m llm_wiki.search_index search "报错文本"
     python -m llm_wiki.search_index stats
 """
+
 from __future__ import annotations
 
 import json
@@ -52,7 +53,10 @@ def main() -> None:
         stats = backend.stats()
         logger.info(
             "backend=%s\nDB=%s\ncases=%s signatures=%s",
-            stats["backend"], stats["db"], stats["cases"], stats["signatures"],
+            stats["backend"],
+            stats["db"],
+            stats["cases"],
+            stats["signatures"],
         )
     else:
         sys.exit("用法: python -m llm_wiki.search_index [reindex|search <text>|stats]")

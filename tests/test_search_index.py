@@ -5,6 +5,7 @@
 
     pytest tests/test_search_index.py
 """
+
 from __future__ import annotations
 
 import pytest
@@ -86,10 +87,10 @@ def test_exact_signatures_filters_and_dedups():
 
 def test_iter_search_tokens_splits_en_num_cjk():
     toks = iter_search_tokens("HikariPool timed out 30007ms 连接池耗尽 ab")
-    assert "HikariPool" in toks       # 英文 >=3 字母
-    assert "30007" in toks            # 数字 >=3 位
-    assert "连接池耗尽" in toks         # 连续中文
-    assert "ab" not in toks           # <3 字母被丢弃
+    assert "HikariPool" in toks  # 英文 >=3 字母
+    assert "30007" in toks  # 数字 >=3 位
+    assert "连接池耗尽" in toks  # 连续中文
+    assert "ab" not in toks  # <3 字母被丢弃
 
 
 def test_is_cjk():
@@ -101,5 +102,5 @@ def test_is_cjk():
 def test_fts_query_quotes_and_trigrams_cjk():
     q = fts_query("HikariPool 连接池耗尽")
     assert '"HikariPool"' in q
-    assert '"连接池"' in q             # 中文按 trigram 切窗
+    assert '"连接池"' in q  # 中文按 trigram 切窗
     assert " OR " in q

@@ -1,4 +1,5 @@
 """Shared SQLAlchemy engine for MySQL storage backends."""
+
 from __future__ import annotations
 
 from llm_wiki.common import storage_config
@@ -76,18 +77,18 @@ def split_sql_statements(sql: str) -> list:
                 i += 2
                 continue
             if ch == quote:
-                if nxt == quote:          # 字符串内 '' / "" / `` 转义
+                if nxt == quote:  # 字符串内 '' / "" / `` 转义
                     buf.append(nxt)
                     i += 2
                     continue
                 quote = None
             i += 1
             continue
-        if (ch == "-" and nxt == "-") or ch == "#":   # 行注释
+        if (ch == "-" and nxt == "-") or ch == "#":  # 行注释
             j = sql.find("\n", i)
             i = n if j == -1 else j
             continue
-        if ch == "/" and nxt == "*":                  # 块注释
+        if ch == "/" and nxt == "*":  # 块注释
             j = sql.find("*/", i + 2)
             i = n if j == -1 else j + 2
             continue

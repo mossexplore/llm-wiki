@@ -13,6 +13,7 @@ query.py — 用一段日志报错,从 wiki/cases/ 里找相似案例
     python -m llm_wiki.knowledge.query "把整段报错粘进来"
     cat error.log | python -m llm_wiki.knowledge.query -
 """
+
 import logging
 import re
 import sys
@@ -36,14 +37,16 @@ def load_cases():
         sigs = fm.get("signatures") or []
         if isinstance(sigs, str):
             sigs = [sigs]
-        cases.append({
-            "path": path,
-            "title": fm.get("title") or path.stem,
-            "status": fm.get("status") or "unknown",
-            "confidence": fm.get("confidence") or "unknown",
-            "signatures": [str(s).strip() for s in sigs if str(s).strip()],
-            "body": body,
-        })
+        cases.append(
+            {
+                "path": path,
+                "title": fm.get("title") or path.stem,
+                "status": fm.get("status") or "unknown",
+                "confidence": fm.get("confidence") or "unknown",
+                "signatures": [str(s).strip() for s in sigs if str(s).strip()],
+                "body": body,
+            }
+        )
     return cases
 
 
@@ -89,15 +92,17 @@ def _search_files(log: str) -> dict:
     for c in cases:
         matched = [s for s in search_index.exact_signatures(c["signatures"]) if s.lower() in log_low]
         if matched:
-            exact.append({
-                "title": c["title"],
-                "file": str(c["path"].relative_to(ROOT)),
-                "matched": matched,
-                "status": c["status"],
-                "confidence": c["confidence"],
-                "note": annotate(c["status"], c["confidence"]),
-                "solution": solution_of(c["body"]),
-            })
+            exact.append(
+                {
+                    "title": c["title"],
+                    "file": str(c["path"].relative_to(ROOT)),
+                    "matched": matched,
+                    "status": c["status"],
+                    "confidence": c["confidence"],
+                    "note": annotate(c["status"], c["confidence"]),
+                    "solution": solution_of(c["body"]),
+                }
+            )
     if exact:
         return _done({"mode": "exact", "hits": exact})
 
@@ -108,8 +113,7 @@ def _search_files(log: str) -> dict:
         sig_tokens = set().union(*(tokenize(s) for s in c["signatures"])) if c["signatures"] else set()
         score = len(log_tokens & (sig_tokens | tokenize(c["title"])))
         if score:
-            scored.append({"title": c["title"], "file": str(c["path"].relative_to(ROOT)),
-                           "score": score, "status": c["status"]})
+            scored.append({"title": c["title"], "file": str(c["path"].relative_to(ROOT)), "score": score, "status": c["status"]})
     scored.sort(key=lambda x: -x["score"])
     if scored:
         return _done({"mode": "fuzzy", "hits": scored[:3]})
@@ -123,7 +127,7 @@ def main():
     arg = sys.argv[1] if len(sys.argv) > 1 else "-"
     log = sys.stdin.read() if arg == "-" else arg
     if not log.strip():
-        sys.exit("用法: python -m llm_wiki.knowledge.query \"报错信息\"  (或用 - 从 stdin 读)")
+        sys.exit('用法: python -m llm_wiki.knowledge.query "报错信息"  (或用 - 从 stdin 读)')
     if not load_cases():
         sys.exit("wiki/cases/ 下暂无任何案例。")
 
@@ -131,11 +135,13 @@ def main():
     if res["mode"] == "exact":
         lines = [f"=== 精确命中 {len(res['hits'])} 个案例 ===", ""]
         for h in res["hits"]:
-            lines.extend([
-                f"● {h['title']}",
-                f"  文件: {h['file']}",
-                f"  命中 signature: {h['matched']}",
-            ])
+            lines.extend(
+                [
+                    f"● {h['title']}",
+                    f"  文件: {h['file']}",
+                    f"  命中 signature: {h['matched']}",
+                ]
+            )
             if h["note"]:
                 lines.append(f"  可信度: {h['note']}")
             lines.extend(["", "  【解决方案】", _indent(h["solution"]), ""])

@@ -43,13 +43,15 @@ def test_feedback_reason_json_filters_unknown_and_duplicate_types():
 
 
 def test_feedback_req_accepts_nested_reason_payload():
-    req = FeedbackReq.model_validate({
-        "feedback": "dislike",
-        "reason": {
-            "feedback_info": "回答不清楚",
-            "feedback_info_types": ["incorrect_information"],
-        },
-    })
+    req = FeedbackReq.model_validate(
+        {
+            "feedback": "dislike",
+            "reason": {
+                "feedback_info": "回答不清楚",
+                "feedback_info_types": ["incorrect_information"],
+            },
+        }
+    )
 
     assert req.feedback == "dislike"
     assert req.reason.feedback_info == "回答不清楚"

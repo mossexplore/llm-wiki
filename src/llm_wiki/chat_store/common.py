@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """对话存储后端共享常量与工具函数。"""
+
 from __future__ import annotations
 
 import datetime
@@ -32,10 +33,11 @@ class MessageMetrics:
     把 add_message 原本十余个并列参数收敛成一个对象,避免跨三层透传时位置错位。
     user 消息不带指标,传 None 即可。
     """
-    answer_source: str | None = None      # 'wiki' | 'llm'
-    retrieval_mode: str | None = None     # 'exact' | 'fuzzy' | 'none'
-    refs: list | None = None              # 来源 wiki 列表
-    elapsed_ms: int | None = None         # 兼容旧字段
+
+    answer_source: str | None = None  # 'wiki' | 'llm'
+    retrieval_mode: str | None = None  # 'exact' | 'fuzzy' | 'none'
+    refs: list | None = None  # 来源 wiki 列表
+    elapsed_ms: int | None = None  # 兼容旧字段
     retrieval_ms: int | None = None
     model_wait_ms: int | None = None
     first_delta_ms: int | None = None

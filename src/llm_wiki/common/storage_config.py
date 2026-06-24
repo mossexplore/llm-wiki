@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """存储后端配置读取:默认 SQLite,可在 config.yaml 中切换到 MySQL。"""
+
 from __future__ import annotations
 
 import os

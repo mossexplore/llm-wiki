@@ -118,20 +118,22 @@ def knowledge_list():
         if fm.get("status", "verified") != "verified":
             continue
         stat = path.stat()
-        items.append({
-            "file": str(path.relative_to(ROOT)),
-            "title": fm.get("title") or path.stem,
-            "category": fm.get("category") or "未分类",
-            "description": fm.get("description") or section(body, "问题背景"),
-            "status": fm.get("status") or "verified",
-            "confidence": fm.get("confidence") or "unknown",
-            "signatures": fm.get("signatures") or [],
-            "components": fm.get("components") or [],
-            "created": fm.get("created") or "",
-            "timestamp": fm.get("timestamp") or "",
-            "updated": datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
-        })
-    return success({"items": items})   # 样例:统一信封返回
+        items.append(
+            {
+                "file": str(path.relative_to(ROOT)),
+                "title": fm.get("title") or path.stem,
+                "category": fm.get("category") or "未分类",
+                "description": fm.get("description") or section(body, "问题背景"),
+                "status": fm.get("status") or "verified",
+                "confidence": fm.get("confidence") or "unknown",
+                "signatures": fm.get("signatures") or [],
+                "components": fm.get("components") or [],
+                "created": fm.get("created") or "",
+                "timestamp": fm.get("timestamp") or "",
+                "updated": datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+            }
+        )
+    return success({"items": items})  # 样例:统一信封返回
 
 
 @router.delete("/api/knowledge")

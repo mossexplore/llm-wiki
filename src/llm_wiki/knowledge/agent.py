@@ -18,6 +18,7 @@ agent.py — 对话 Agent 的「先检索、后生成」编排层(RAG)
   - CHAT_WIKI_PROMPT      命中知识库时的自定义系统提示词(覆盖默认 RAG 提示词)。
   - CHAT_SYSTEM_PROMPT    未命中、纯大模型兜底时的系统提示词。
 """
+
 from __future__ import annotations
 
 import logging
@@ -104,8 +105,7 @@ def retrieve(text: str) -> dict:
         context = [c for c in (_case_context(p["file"]) for p in picked_files) if c]
         if context:
             refs = [{"file": c["file"], "title": c["title"]} for c in context]
-            return {"source": "wiki", "mode": mode, "elapsed_ms": elapsed,
-                    "refs": refs, "context": context}
+            return {"source": "wiki", "mode": mode, "elapsed_ms": elapsed, "refs": refs, "context": context}
 
     # 关联度小 / 无命中 → 交给大模型(不带知识库资料)
     return {"source": "llm", "mode": mode, "elapsed_ms": elapsed, "refs": [], "context": []}
@@ -113,8 +113,7 @@ def retrieve(text: str) -> dict:
 
 def _context_block(context: list, related: bool) -> str:
     """把检索到的案例拼成喂给大模型的资料文本。"""
-    head = ("【知识库检索到的相关案例资料(关联度较高,供参考)】"
-            if related else "【知识库检索到的相关案例资料(精确命中)】")
+    head = "【知识库检索到的相关案例资料(关联度较高,供参考)】" if related else "【知识库检索到的相关案例资料(精确命中)】"
     blocks = [head, ""]
     for i, c in enumerate(context, 1):
         blocks.append(f"案例{i}:{c['title']}(来源 wiki:{c['file']})")
@@ -182,7 +181,10 @@ def stream_messages(messages):
     started = time.perf_counter()
     logger.info(
         "agent.chat.request model=%s thinking_enabled=%s message_count=%s char_count=%s message_lengths=%s",
-        model, thinking_enabled, stats["message_count"], stats["char_count"],
+        model,
+        thinking_enabled,
+        stats["message_count"],
+        stats["char_count"],
         stats["message_lengths"],
     )
     request_kwargs = {
@@ -196,7 +198,8 @@ def stream_messages(messages):
     stream = client.chat.completions.create(**request_kwargs)
     logger.info(
         "agent.chat.stream_created model=%s create_ms=%s",
-        model, int((time.perf_counter() - started) * 1000),
+        model,
+        int((time.perf_counter() - started) * 1000),
     )
     first_chunk_logged = False
     first_content_logged = False
@@ -205,28 +208,15 @@ def stream_messages(messages):
             first_chunk_logged = True
             logger.info(
                 "agent.chat.first_chunk model=%s first_chunk_ms=%s",
-                model, int((time.perf_counter() - started) * 1000),
+                model,
+                int((time.perf_counter() - started) * 1000),
             )
         if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
             if not first_content_logged:
                 first_content_logged = True
                 logger.info(
                     "agent.chat.first_content model=%s first_content_ms=%s",
-                    model, int((time.perf_counter() - started) * 1000),
+                    model,
+                    int((time.perf_counter() - started) * 1000),
                 )
             yield chunk.choices[0].delta.content
-
-
-def _stream_chat(messages):
-    """兼容旧调用名;新代码优先用 stream_messages(),这样语义更明确。"""
-    yield from stream_messages(messages)
-
-
-def stream_wiki_answer(text: str, decision: dict):
-    """命中知识库:把检索资料 + 自定义提示词喂给大模型,流式生成回答。"""
-    yield from stream_messages(build_answer_messages(text, decision))
-
-
-def stream_llm_answer(text: str):
-    """未命中知识库:不带资料,直接让大模型基于通用经验流式回答。"""
-    yield from stream_messages(build_answer_messages(text, {"source": "llm"}))

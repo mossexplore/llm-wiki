@@ -3,6 +3,7 @@
 
 只负责 MySQL 特有的连接、建表与迁移;增删改查编排在 base.BaseChatStore。
 """
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -80,35 +81,47 @@ class MySQLChatStore(BaseChatStore):
 
 
 def _column_exists(conn, table: str, column: str) -> bool:
-    row = conn.execute(
-        _sql_text(
-            """SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+    row = (
+        conn.execute(
+            _sql_text(
+                """SELECT COUNT(*) AS n FROM information_schema.COLUMNS
                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND COLUMN_NAME = :c"""
-        ),
-        {"t": table, "c": column},
-    ).mappings().one()
+            ),
+            {"t": table, "c": column},
+        )
+        .mappings()
+        .one()
+    )
     return row["n"] > 0
 
 
 def _column_varchar_length(conn, table: str, column: str) -> int | None:
-    row = conn.execute(
-        _sql_text(
-            """SELECT CHARACTER_MAXIMUM_LENGTH AS length FROM information_schema.COLUMNS
+    row = (
+        conn.execute(
+            _sql_text(
+                """SELECT CHARACTER_MAXIMUM_LENGTH AS length FROM information_schema.COLUMNS
                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND COLUMN_NAME = :c"""
-        ),
-        {"t": table, "c": column},
-    ).mappings().first()
+            ),
+            {"t": table, "c": column},
+        )
+        .mappings()
+        .first()
+    )
     return row["length"] if row else None
 
 
 def _add_index_if_missing(conn, table: str, index: str, column: str) -> None:
-    row = conn.execute(
-        _sql_text(
-            """SELECT COUNT(*) AS n FROM information_schema.STATISTICS
+    row = (
+        conn.execute(
+            _sql_text(
+                """SELECT COUNT(*) AS n FROM information_schema.STATISTICS
                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND INDEX_NAME = :i"""
-        ),
-        {"t": table, "i": index},
-    ).mappings().one()
+            ),
+            {"t": table, "i": index},
+        )
+        .mappings()
+        .one()
+    )
     if row["n"] == 0:
         conn.execute(_sql_text(f"ALTER TABLE {table} ADD INDEX {index} ({column})"))
 
@@ -127,13 +140,17 @@ def _migrate_columns(conn) -> None:
 
 
 def _migrate_feedback_table(conn) -> None:
-    old_feedback = conn.execute(
-        _sql_text(
-            """SELECT COUNT(*) AS n FROM information_schema.TABLES
+    old_feedback = (
+        conn.execute(
+            _sql_text(
+                """SELECT COUNT(*) AS n FROM information_schema.TABLES
                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t"""
-        ),
-        {"t": "t_chat_feedback"},
-    ).mappings().one()["n"]
+            ),
+            {"t": "t_chat_feedback"},
+        )
+        .mappings()
+        .one()["n"]
+    )
     if old_feedback:
         conn.execute(_sql_text("DROP TABLE t_chat_feedback"))
 
@@ -156,6 +173,13 @@ def _ensure_default_session_source(conn) -> None:
                (code, service, scene, description, enabled, created_at, updated_at)
                VALUES (:code,:service,:scene,:description,:enabled,:created_at,:updated_at)"""
         ),
-        {"code": "web", "service": "wiserec-wiki", "scene": "chat",
-         "description": "Web 页面聊天入口", "enabled": 1, "created_at": ts, "updated_at": ts},
+        {
+            "code": "web",
+            "service": "wiserec-wiki",
+            "scene": "chat",
+            "description": "Web 页面聊天入口",
+            "enabled": 1,
+            "created_at": ts,
+            "updated_at": ts,
+        },
     )

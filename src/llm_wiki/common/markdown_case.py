@@ -4,6 +4,7 @@
 避免各模块各写一套正则导致行为漂移(历史上 query.py 用手写正则解析 YAML,
 其余模块用 yaml.safe_load,两套解析器容易不一致)。
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -67,5 +68,5 @@ def normalize_json_text(text: str) -> str:
         first = txt.find("{")
         last = txt.rfind("}")
         if first != -1 and last > first:
-            txt = txt[first:last + 1].strip()
+            txt = txt[first : last + 1].strip()
     return txt

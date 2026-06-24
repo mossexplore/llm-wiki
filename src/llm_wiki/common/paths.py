@@ -1,4 +1,5 @@
 """Project paths loaded from config, with repository-layout fallback."""
+
 from __future__ import annotations
 
 import os

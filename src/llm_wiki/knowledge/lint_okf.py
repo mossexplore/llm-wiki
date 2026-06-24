@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """lint_okf.py — 检查 log-wiki 的 OKF-ish 结构与排查护栏。"""
+
 import collections
 import logging
 import pathlib

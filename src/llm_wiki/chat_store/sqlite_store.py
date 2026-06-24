@@ -3,6 +3,7 @@
 
 只负责 SQLite 特有的连接管理、建表与轻量迁移;增删改查编排在 base.BaseChatStore。
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -59,8 +60,8 @@ class SqliteChatStore(BaseChatStore):
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA busy_timeout = 5000")    # 写并发下等待 5s 而非立即 'database is locked'
-        conn.execute("PRAGMA journal_mode = WAL")      # 读写并发更友好(WAL 一经设置即持久)
+        conn.execute("PRAGMA busy_timeout = 5000")  # 写并发下等待 5s 而非立即 'database is locked'
+        conn.execute("PRAGMA journal_mode = WAL")  # 读写并发更友好(WAL 一经设置即持久)
         return conn
 
     @contextmanager
@@ -113,9 +114,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for name, typ in MESSAGE_LATENCY_COLUMNS.items():
         if name not in cols:
             conn.execute(f"ALTER TABLE t_chat_messages ADD COLUMN {name} {typ}")
-    old_feedback = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='t_chat_feedback'"
-    ).fetchone()
+    old_feedback = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='t_chat_feedback'").fetchone()
     if old_feedback:
         conn.execute("DROP TABLE t_chat_feedback")
 

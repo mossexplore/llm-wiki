@@ -2,6 +2,7 @@
 
 用一个最小 FastAPI 应用单独验证 response.py,不引入真实 server 的配置/DB 副作用。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -73,7 +74,7 @@ def test_success_response_envelope(client):
 
 def test_api_error_keeps_http_status_and_code(client):
     r = client.get("/boom")
-    assert r.status_code == 404                       # HTTP 状态码保留
+    assert r.status_code == 404  # HTTP 状态码保留
     body = r.json()
     assert body["result"]["code"] == ErrorCode.CHAT_SESSION_NOT_FOUND.code
     assert body["result"]["des"] == ErrorCode.CHAT_SESSION_NOT_FOUND.description
@@ -81,7 +82,7 @@ def test_api_error_keeps_http_status_and_code(client):
 
 
 def test_validation_error_wrapped_as_param_invalid(client):
-    r = client.post("/need-body", json={})            # 缺 name 字段
+    r = client.post("/need-body", json={})  # 缺 name 字段
     assert r.status_code == ErrorCode.PARAM_INVALID.http_status
     assert r.json()["result"]["code"] == ErrorCode.PARAM_INVALID.code
 
@@ -91,4 +92,4 @@ def test_unhandled_exception_is_generic(client):
     assert r.status_code == 500
     body = r.json()
     assert body["result"]["code"] == ErrorCode.INTERNAL_ERROR.code
-    assert "内部细节" not in body["result"]["des"]      # 原始异常不外泄
+    assert "内部细节" not in body["result"]["des"]  # 原始异常不外泄

@@ -7,6 +7,7 @@ base.BaseChatStore 的 CRUD 编排,只在连接/建表/迁移上分方言(sqlite
 可单独排障:
     python -m llm_wiki.chat_store stats
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,9 +21,20 @@ from .mysql_store import MySQLChatStore
 from .sqlite_store import SqliteChatStore
 
 __all__ = [
-    "MessageMetrics", "create_session", "list_sessions", "session_exists", "has_messages",
-    "rename_session", "delete_session", "clear_sessions", "add_message", "get_messages",
-    "message_exists", "set_feedback", "clear_feedback", "stats",
+    "MessageMetrics",
+    "create_session",
+    "list_sessions",
+    "session_exists",
+    "has_messages",
+    "rename_session",
+    "delete_session",
+    "clear_sessions",
+    "add_message",
+    "get_messages",
+    "message_exists",
+    "set_feedback",
+    "clear_feedback",
+    "stats",
 ]
 
 _stores: dict = {}
@@ -36,8 +48,7 @@ def _backend() -> BaseChatStore:
     return _stores[name]
 
 
-def create_session(title: str = "新会话", user_id: str | None = None,
-                   source_code: str = "web") -> dict:
+def create_session(title: str = "新会话", user_id: str | None = None, source_code: str = "web") -> dict:
     return _backend().create_session(title, user_id, source_code)
 
 
@@ -65,8 +76,7 @@ def clear_sessions(user_id: str | None = None) -> dict:
     return _backend().clear_sessions(user_id)
 
 
-def add_message(session_id: str, role: str, content: str,
-                metrics: MessageMetrics | None = None, *, user_id: str | None = None) -> dict:
+def add_message(session_id: str, role: str, content: str, metrics: MessageMetrics | None = None, *, user_id: str | None = None) -> dict:
     return _backend().add_message(session_id, role, content, metrics, user_id=user_id)
 
 
@@ -78,8 +88,7 @@ def message_exists(message_id: str, user_id: str | None = None) -> dict | None:
     return _backend().message_exists(message_id, user_id)
 
 
-def set_feedback(message_id: str, session_id: str, feedback: str, reason: str | None = None,
-                 user_id: str | None = None) -> dict:
+def set_feedback(message_id: str, session_id: str, feedback: str, reason: str | None = None, user_id: str | None = None) -> dict:
     return _backend().set_feedback(message_id, session_id, feedback, reason, user_id)
 
 

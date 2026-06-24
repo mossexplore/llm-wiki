@@ -1,4 +1,5 @@
 """共享 Markdown 案例解析工具的单元测试。"""
+
 from __future__ import annotations
 
 from llm_wiki.common.markdown_case import (
@@ -52,6 +53,6 @@ def test_annotate_combines_status_and_confidence():
 
 
 def test_normalize_json_text_strips_fence_and_prose():
-    assert normalize_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}'
-    assert normalize_json_text("前言 {\"a\": 1} 后记") == '{"a": 1}'
-    assert normalize_json_text("```\n{\"x\": 2}\n```") == '{"x": 2}'
+    assert normalize_json_text('```json\n{"a": 1}\n```') == '{"a": 1}'
+    assert normalize_json_text('前言 {"a": 1} 后记') == '{"a": 1}'
+    assert normalize_json_text('```\n{"x": 2}\n```') == '{"x": 2}'

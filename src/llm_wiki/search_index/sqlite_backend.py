@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """SQLite + FTS5 检索索引后端。"""
+
 from __future__ import annotations
 
 import pathlib
@@ -60,15 +61,23 @@ class SqliteSearch(SearchBackend):
                (id, file, title, category, status, confidence, components,
                 signatures_text, background, diagnosis, solution, updated_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (cid, case.get("file", ""), case.get("title", ""), case.get("category", ""),
-             case.get("status", ""), case.get("confidence", ""), "\n".join(comps),
-             "\n".join(sigs), case.get("background", ""), case.get("diagnosis", ""),
-             case.get("solution", ""), case.get("updated_at", "")),
+            (
+                cid,
+                case.get("file", ""),
+                case.get("title", ""),
+                case.get("category", ""),
+                case.get("status", ""),
+                case.get("confidence", ""),
+                "\n".join(comps),
+                "\n".join(sigs),
+                case.get("background", ""),
+                case.get("diagnosis", ""),
+                case.get("solution", ""),
+                case.get("updated_at", ""),
+            ),
         )
         rid = cur.lastrowid
-        body = "\n".join(filter(None, [case.get("background", ""),
-                                       case.get("diagnosis", ""),
-                                       case.get("solution", "")]))
+        body = "\n".join(filter(None, [case.get("background", ""), case.get("diagnosis", ""), case.get("solution", "")]))
         conn.execute(
             "INSERT INTO t_cases_fts(rowid, title, signatures_text, components, body) VALUES(?,?,?,?,?)",
             (rid, case.get("title", ""), "\n".join(sigs), "\n".join(comps), body),
@@ -138,6 +147,7 @@ class SqliteSearch(SearchBackend):
         if not self.available():
             return None
         import time
+
         started = time.perf_counter()
         self.ensure_built()
         log_low = log.lower()
@@ -155,18 +165,21 @@ class SqliteSearch(SearchBackend):
             if matched:
                 hits = []
                 for cid, sigs in matched.items():
-                    r = conn.execute(
-                        "SELECT title, file, status, confidence, solution FROM t_cases WHERE id=?",
-                        (cid,)).fetchone()
+                    r = conn.execute("SELECT title, file, status, confidence, solution FROM t_cases WHERE id=?", (cid,)).fetchone()
                     if not r:
                         continue
                     title, file, status, confidence, solution = r
-                    hits.append({
-                        "title": title, "file": file, "matched": sigs,
-                        "status": status, "confidence": confidence,
-                        "note": annotate(status, confidence),
-                        "solution": solution or "(该案例无「解决方案」段落)",
-                    })
+                    hits.append(
+                        {
+                            "title": title,
+                            "file": file,
+                            "matched": sigs,
+                            "status": status,
+                            "confidence": confidence,
+                            "note": annotate(status, confidence),
+                            "solution": solution or "(该案例无「解决方案」段落)",
+                        }
+                    )
                 return done(started, {"mode": "exact", "hits": hits})
 
             match_q = fts_query(log)
@@ -177,14 +190,20 @@ class SqliteSearch(SearchBackend):
                            FROM t_cases_fts JOIN t_cases c ON c.rowid = t_cases_fts.rowid
                            WHERE t_cases_fts MATCH ?
                            ORDER BY score ASC LIMIT ?""",
-                        (match_q, limit)).fetchall()
+                        (match_q, limit),
+                    ).fetchall()
                 except sqlite3.OperationalError:
                     rows = []
                 if rows:
-                    hits = [{
-                        "title": t, "file": f, "status": s,
-                        "score": round(-score, 3),
-                    } for (t, f, s, score) in rows]
+                    hits = [
+                        {
+                            "title": t,
+                            "file": f,
+                            "status": s,
+                            "score": round(-score, 3),
+                        }
+                        for (t, f, s, score) in rows
+                    ]
                     return done(started, {"mode": "fuzzy", "hits": hits})
 
             return done(started, {"mode": "none", "hits": []})
@@ -215,7 +234,7 @@ def fts_query(log: str) -> str:
         if is_cjk(tok):
             if len(tok) < 3:
                 continue
-            terms.extend(tok[i:i + 3] for i in range(len(tok) - 2))
+            terms.extend(tok[i : i + 3] for i in range(len(tok) - 2))
         else:
             terms.append(tok)
     seen, out = set(), []

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """MySQL FULLTEXT 检索索引后端。"""
+
 from __future__ import annotations
 
 from llm_wiki.common.mysql_client import (
@@ -69,8 +70,9 @@ class MySQLSearch(SearchBackend):
             "solution": case.get("solution", ""),
             "updated_at": case.get("updated_at", ""),
         }
-        conn.execute(_sql_text(
-            """INSERT INTO t_cases
+        conn.execute(
+            _sql_text(
+                """INSERT INTO t_cases
                (id, file, title, category, status, confidence, components,
                 signatures_text, background, diagnosis, solution, updated_at)
                VALUES (:id,:file,:title,:category,:status,:confidence,:components,
@@ -81,7 +83,9 @@ class MySQLSearch(SearchBackend):
                  components=VALUES(components), signatures_text=VALUES(signatures_text),
                  background=VALUES(background), diagnosis=VALUES(diagnosis),
                  solution=VALUES(solution), updated_at=VALUES(updated_at)"""
-        ), params)
+            ),
+            params,
+        )
         for s in exact_signatures(sigs):
             conn.execute(
                 _sql_text("INSERT INTO t_case_signatures(case_id, signature) VALUES(:case_id,:signature)"),
@@ -128,55 +132,75 @@ class MySQLSearch(SearchBackend):
         if not self.available():
             return None
         import time
+
         started = time.perf_counter()
         self.ensure_built()
         log_low = log.lower()
         with get_mysql_client().begin() as conn:
             # 子串判断下推到 MySQL(LOCATE),避免每次查询把整张 signature 表拉回应用层。
-            sig_rows = conn.execute(
-                _sql_text(
-                    "SELECT case_id, signature FROM t_case_signatures "
-                    "WHERE LOCATE(LOWER(signature), :log) > 0"
-                ),
-                {"log": log_low},
-            ).mappings().all()
+            sig_rows = (
+                conn.execute(
+                    _sql_text("SELECT case_id, signature FROM t_case_signatures WHERE LOCATE(LOWER(signature), :log) > 0"),
+                    {"log": log_low},
+                )
+                .mappings()
+                .all()
+            )
             matched: dict[str, list] = {}
             for row in sig_rows:
                 matched.setdefault(row["case_id"], []).append(row["signature"])
             if matched:
                 hits = []
                 for cid, sigs in matched.items():
-                    r = conn.execute(
-                        _sql_text("SELECT title, file, status, confidence, solution FROM t_cases WHERE id=:case_id"),
-                        {"case_id": cid},
-                    ).mappings().first()
+                    r = (
+                        conn.execute(
+                            _sql_text("SELECT title, file, status, confidence, solution FROM t_cases WHERE id=:case_id"),
+                            {"case_id": cid},
+                        )
+                        .mappings()
+                        .first()
+                    )
                     if not r:
                         continue
-                    hits.append({
-                        "title": r["title"], "file": r["file"], "matched": sigs,
-                        "status": r["status"], "confidence": r["confidence"],
-                        "note": annotate(r["status"], r["confidence"]),
-                        "solution": r["solution"] or "(该案例无「解决方案」段落)",
-                    })
+                    hits.append(
+                        {
+                            "title": r["title"],
+                            "file": r["file"],
+                            "matched": sigs,
+                            "status": r["status"],
+                            "confidence": r["confidence"],
+                            "note": annotate(r["status"], r["confidence"]),
+                            "solution": r["solution"] or "(该案例无「解决方案」段落)",
+                        }
+                    )
                 return done(started, {"mode": "exact", "hits": hits})
 
             query_text = mysql_query(log)
             if query_text:
-                rows = conn.execute(
-                    _sql_text("""SELECT title, file, status,
+                rows = (
+                    conn.execute(
+                        _sql_text("""SELECT title, file, status,
                               MATCH(title, signatures_text, components, background, diagnosis, solution)
                               AGAINST(:query_text IN NATURAL LANGUAGE MODE) AS score
                        FROM t_cases
                        WHERE MATCH(title, signatures_text, components, background, diagnosis, solution)
                              AGAINST(:query_text IN NATURAL LANGUAGE MODE)
                        ORDER BY score DESC LIMIT :limit"""),
-                    {"query_text": query_text, "limit": limit},
-                ).mappings().all()
+                        {"query_text": query_text, "limit": limit},
+                    )
+                    .mappings()
+                    .all()
+                )
                 if rows:
-                    hits = [{
-                        "title": r["title"], "file": r["file"], "status": r["status"],
-                        "score": round(float(r["score"] or 0), 3),
-                    } for r in rows]
+                    hits = [
+                        {
+                            "title": r["title"],
+                            "file": r["file"],
+                            "status": r["status"],
+                            "score": round(float(r["score"] or 0), 3),
+                        }
+                        for r in rows
+                    ]
                     return done(started, {"mode": "fuzzy", "hits": hits})
             return done(started, {"mode": "none", "hits": []})
 

@@ -8,6 +8,7 @@ stdlib sqlite3 也支持),只有连接管理、建表与迁移随方言不同。
   - ``_ensure_schema()``  首次使用时建表 + 轻量迁移;
   - ``BACKEND`` / ``label()``  后端标识与无密码展示串。
 """
+
 from __future__ import annotations
 
 import json
@@ -34,8 +35,7 @@ class BaseChatStore:
         raise NotImplementedError
 
     # --- 会话 ---------------------------------------------------------------
-    def create_session(self, title: str = "新会话", user_id: str | None = None,
-                       source_code: str = "web") -> dict:
+    def create_session(self, title: str = "新会话", user_id: str | None = None, source_code: str = "web") -> dict:
         sid = new_id()
         ts = now()
         title = title or "新会话"
@@ -44,11 +44,17 @@ class BaseChatStore:
             c.run(
                 """INSERT INTO t_chat_sessions (id, user_id, source_code, title, created_at, updated_at)
                    VALUES (:id,:user_id,:source_code,:title,:created_at,:updated_at)""",
-                {"id": sid, "user_id": user_id, "source_code": source_code,
-                 "title": title, "created_at": ts, "updated_at": ts},
+                {"id": sid, "user_id": user_id, "source_code": source_code, "title": title, "created_at": ts, "updated_at": ts},
             )
-        return {"id": sid, "user_id": user_id, "source_code": source_code, "title": title,
-                "created_at": ts, "updated_at": ts, "message_count": 0}
+        return {
+            "id": sid,
+            "user_id": user_id,
+            "source_code": source_code,
+            "title": title,
+            "created_at": ts,
+            "updated_at": ts,
+            "message_count": 0,
+        }
 
     def list_sessions(self, user_id: str | None = None) -> list:
         """列出会话(按活跃倒序);传入 user_id 时只返回该用户的会话。"""
@@ -66,29 +72,33 @@ class BaseChatStore:
     def session_exists(self, session_id: str, user_id: str | None = None) -> bool:
         """会话是否存在;传 user_id 时还要求归属该用户(否则视为不存在)。"""
         with self._tx() as c:
-            return c.one(
-                "SELECT 1 AS x FROM t_chat_sessions WHERE id=:sid AND (:uid IS NULL OR user_id=:uid)",
-                {"sid": session_id, "uid": user_id},
-            ) is not None
+            return (
+                c.one(
+                    "SELECT 1 AS x FROM t_chat_sessions WHERE id=:sid AND (:uid IS NULL OR user_id=:uid)",
+                    {"sid": session_id, "uid": user_id},
+                )
+                is not None
+            )
 
     def has_messages(self, session_id: str) -> bool:
         with self._tx() as c:
-            return c.one("SELECT 1 AS x FROM t_chat_messages WHERE session_id=:sid LIMIT 1",
-                         {"sid": session_id}) is not None
+            return c.one("SELECT 1 AS x FROM t_chat_messages WHERE session_id=:sid LIMIT 1", {"sid": session_id}) is not None
 
     def rename_session(self, session_id: str, title: str) -> None:
         with self._tx() as c:
-            c.run("UPDATE t_chat_sessions SET title=:title, updated_at=:ts WHERE id=:sid",
-                  {"title": title, "ts": now(), "sid": session_id})
+            c.run("UPDATE t_chat_sessions SET title=:title, updated_at=:ts WHERE id=:sid", {"title": title, "ts": now(), "sid": session_id})
 
     def delete_session(self, session_id: str, user_id: str | None = None) -> bool:
         """删会话;传 user_id 时只删归属该用户的会话。仅在会话确被删除时级联消息/反馈。"""
         with self._tx() as c:
-            deleted = c.run(
-                "DELETE FROM t_chat_sessions WHERE id=:sid AND (:uid IS NULL OR user_id=:uid)",
-                {"sid": session_id, "uid": user_id},
-            ) > 0
-            if deleted:   # 未删到(不存在或不归属)就不动其消息/反馈
+            deleted = (
+                c.run(
+                    "DELETE FROM t_chat_sessions WHERE id=:sid AND (:uid IS NULL OR user_id=:uid)",
+                    {"sid": session_id, "uid": user_id},
+                )
+                > 0
+            )
+            if deleted:  # 未删到(不存在或不归属)就不动其消息/反馈
                 c.run("DELETE FROM t_chat_messages WHERE session_id=:sid", {"sid": session_id})
                 c.run("DELETE FROM t_chat_feedbacks WHERE session_id=:sid", {"sid": session_id})
         return deleted
@@ -115,8 +125,9 @@ class BaseChatStore:
         return counts
 
     # --- 消息 ---------------------------------------------------------------
-    def add_message(self, session_id: str, role: str, content: str,
-                    metrics: MessageMetrics | None = None, *, user_id: str | None = None) -> dict:
+    def add_message(
+        self, session_id: str, role: str, content: str, metrics: MessageMetrics | None = None, *, user_id: str | None = None
+    ) -> dict:
         """追加一条消息,返回完整记录(含生成的 id / seq)。"""
         m = metrics or MessageMetrics()
         mid = new_id()
@@ -127,23 +138,46 @@ class BaseChatStore:
                 "SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM t_chat_messages WHERE session_id=:sid",
                 {"sid": session_id},
             )["next"]
-            c.run(_INSERT_MESSAGE, {
-                "id": mid, "session_id": session_id, "user_id": user_id, "seq": seq,
-                "role": role, "content": content,
-                "answer_source": m.answer_source, "retrieval_mode": m.retrieval_mode, "refs": refs_json,
-                "elapsed_ms": m.elapsed_ms, "retrieval_ms": m.retrieval_ms, "model_wait_ms": m.model_wait_ms,
-                "first_delta_ms": m.first_delta_ms, "total_ms": m.total_ms,
-                "message_count": m.message_count, "prompt_chars": m.prompt_chars,
-                "created_at": ts,
-            })
+            c.run(
+                _INSERT_MESSAGE,
+                {
+                    "id": mid,
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "seq": seq,
+                    "role": role,
+                    "content": content,
+                    "answer_source": m.answer_source,
+                    "retrieval_mode": m.retrieval_mode,
+                    "refs": refs_json,
+                    "elapsed_ms": m.elapsed_ms,
+                    "retrieval_ms": m.retrieval_ms,
+                    "model_wait_ms": m.model_wait_ms,
+                    "first_delta_ms": m.first_delta_ms,
+                    "total_ms": m.total_ms,
+                    "message_count": m.message_count,
+                    "prompt_chars": m.prompt_chars,
+                    "created_at": ts,
+                },
+            )
             c.run("UPDATE t_chat_sessions SET updated_at=:ts WHERE id=:sid", {"ts": ts, "sid": session_id})
         return {
-            "id": mid, "session_id": session_id, "user_id": user_id, "seq": seq,
-            "role": role, "content": content,
-            "answer_source": m.answer_source, "retrieval_mode": m.retrieval_mode,
-            "refs": m.refs or [], "elapsed_ms": m.elapsed_ms, "retrieval_ms": m.retrieval_ms,
-            "model_wait_ms": m.model_wait_ms, "first_delta_ms": m.first_delta_ms, "total_ms": m.total_ms,
-            "message_count": m.message_count, "prompt_chars": m.prompt_chars,
+            "id": mid,
+            "session_id": session_id,
+            "user_id": user_id,
+            "seq": seq,
+            "role": role,
+            "content": content,
+            "answer_source": m.answer_source,
+            "retrieval_mode": m.retrieval_mode,
+            "refs": m.refs or [],
+            "elapsed_ms": m.elapsed_ms,
+            "retrieval_ms": m.retrieval_ms,
+            "model_wait_ms": m.model_wait_ms,
+            "first_delta_ms": m.first_delta_ms,
+            "total_ms": m.total_ms,
+            "message_count": m.message_count,
+            "prompt_chars": m.prompt_chars,
             "created_at": ts,
         }
 
@@ -168,14 +202,12 @@ class BaseChatStore:
         """取消息基本信息;传 user_id 时还要求归属该用户(否则视为不存在)。"""
         with self._tx() as c:
             return c.one(
-                "SELECT id, session_id, user_id, role FROM t_chat_messages "
-                "WHERE id=:mid AND (:uid IS NULL OR user_id=:uid)",
+                "SELECT id, session_id, user_id, role FROM t_chat_messages WHERE id=:mid AND (:uid IS NULL OR user_id=:uid)",
                 {"mid": message_id, "uid": user_id},
             )
 
     # --- 反馈 ---------------------------------------------------------------
-    def set_feedback(self, message_id: str, session_id: str, feedback: str,
-                     reason: str | None = None, user_id: str | None = None) -> dict:
+    def set_feedback(self, message_id: str, session_id: str, feedback: str, reason: str | None = None, user_id: str | None = None) -> dict:
         """记录一条反馈;同一消息重复反馈则覆盖。"""
         ts = now()
         with self._tx() as c:
@@ -194,8 +226,16 @@ class BaseChatStore:
                     """INSERT INTO t_chat_feedbacks
                        (id, message_id, session_id, user_id, feedback, reason, created_at, updated_at)
                        VALUES (:id,:mid,:sid,:user_id,:feedback,:reason,:created_at,:updated_at)""",
-                    {"id": fid, "mid": message_id, "sid": session_id, "user_id": user_id,
-                     "feedback": feedback, "reason": reason, "created_at": ts, "updated_at": ts},
+                    {
+                        "id": fid,
+                        "mid": message_id,
+                        "sid": session_id,
+                        "user_id": user_id,
+                        "feedback": feedback,
+                        "reason": reason,
+                        "created_at": ts,
+                        "updated_at": ts,
+                    },
                 )
         return {"id": fid, "message_id": message_id, "user_id": user_id, "feedback": feedback, "reason": reason}
 

@@ -2,6 +2,7 @@
 
 通过 SqliteChatStore 实例操作(CHAT_DB 由 conftest 指向临时库),每个用例先清空。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -41,9 +42,10 @@ def test_add_message_increments_seq_and_returns_row():
     s = store.create_session()
     m1 = store.add_message(s["id"], "user", "你好", user_id="u1")
     m2 = store.add_message(
-        s["id"], "assistant", "答",
-        MessageMetrics(answer_source="wiki", retrieval_mode="exact",
-                       refs=[{"file": "a.md", "title": "A"}], total_ms=12),
+        s["id"],
+        "assistant",
+        "答",
+        MessageMetrics(answer_source="wiki", retrieval_mode="exact", refs=[{"file": "a.md", "title": "A"}], total_ms=12),
     )
     assert m1["seq"] == 1
     assert m2["seq"] == 2
@@ -55,8 +57,7 @@ def test_add_message_increments_seq_and_returns_row():
 def test_get_messages_order_and_refs_and_feedback():
     s = store.create_session()
     store.add_message(s["id"], "user", "q")
-    a = store.add_message(s["id"], "assistant", "a",
-                          MessageMetrics(refs=[{"file": "x.md", "title": "X"}]))
+    a = store.add_message(s["id"], "assistant", "a", MessageMetrics(refs=[{"file": "x.md", "title": "X"}]))
     store.set_feedback(a["id"], s["id"], "like")
     msgs = store.get_messages(s["id"])
     assert [m["seq"] for m in msgs] == [1, 2]
@@ -78,7 +79,7 @@ def test_list_sessions_orders_by_updated_desc_with_counts(monkeypatch):
     monkeypatch.setattr(base, "now", lambda: next(ticks))
     a = store.create_session("A")
     b = store.create_session("B")
-    store.add_message(b["id"], "user", "q")   # b 更新更晚
+    store.add_message(b["id"], "user", "q")  # b 更新更晚
     items = store.list_sessions()
     assert items[0]["id"] == b["id"]
     by_id = {it["id"]: it for it in items}
@@ -89,11 +90,11 @@ def test_list_sessions_orders_by_updated_desc_with_counts(monkeypatch):
 def test_list_sessions_filtered_by_user():
     store.create_session("u1-a", user_id="u1")
     store.create_session("u2-a", user_id="u2")
-    store.create_session("anon")               # 无 user_id
+    store.create_session("anon")  # 无 user_id
     u1 = store.list_sessions(user_id="u1")
     assert [s["title"] for s in u1] == ["u1-a"]
     assert all(s["user_id"] == "u1" for s in u1)
-    assert len(store.list_sessions()) == 3     # 不传 user_id 返回全部
+    assert len(store.list_sessions()) == 3  # 不传 user_id 返回全部
 
 
 def test_rename_session():
@@ -142,17 +143,17 @@ def test_delete_session_removes_messages_and_feedback():
 
 def test_session_exists_scoped_by_user():
     s = store.create_session("s", user_id="u1")
-    assert store.session_exists(s["id"]) is True                 # 不传 user_id:存在即真
-    assert store.session_exists(s["id"], user_id="u1") is True    # 归属匹配
-    assert store.session_exists(s["id"], user_id="u2") is False   # 非归属视为不存在
+    assert store.session_exists(s["id"]) is True  # 不传 user_id:存在即真
+    assert store.session_exists(s["id"], user_id="u1") is True  # 归属匹配
+    assert store.session_exists(s["id"], user_id="u2") is False  # 非归属视为不存在
 
 
 def test_delete_session_scoped_by_user():
     s = store.create_session("s", user_id="u1")
     store.add_message(s["id"], "user", "q")
-    assert store.delete_session(s["id"], user_id="u2") is False   # 别人删不掉
-    assert len(store.get_messages(s["id"])) == 1                  # 消息也没被误删
-    assert store.delete_session(s["id"], user_id="u1") is True    # 本人可删
+    assert store.delete_session(s["id"], user_id="u2") is False  # 别人删不掉
+    assert len(store.get_messages(s["id"])) == 1  # 消息也没被误删
+    assert store.delete_session(s["id"], user_id="u1") is True  # 本人可删
     assert store.get_messages(s["id"]) == []
 
 
@@ -160,7 +161,7 @@ def test_message_exists_scoped_by_user():
     s = store.create_session("s", user_id="u1")
     m = store.add_message(s["id"], "assistant", "a", user_id="u1")
     assert store.message_exists(m["id"], user_id="u1")["role"] == "assistant"
-    assert store.message_exists(m["id"], user_id="u2") is None    # 非归属视为不存在
+    assert store.message_exists(m["id"], user_id="u2") is None  # 非归属视为不存在
 
 
 def test_clear_sessions_by_user_only_removes_that_user():

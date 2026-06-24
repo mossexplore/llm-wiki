@@ -57,7 +57,9 @@ def ingest_preview(req: PreviewReq, x_request_id: Optional[str] = Header(default
     started = time.perf_counter()
     logger.info(
         "ingest.preview.start request_id=%s raw_len=%s prompt_len=%s",
-        request_id, len(raw), len(prompt),
+        request_id,
+        len(raw),
+        len(prompt),
     )
 
     def gen():
@@ -70,13 +72,17 @@ def ingest_preview(req: PreviewReq, x_request_id: Optional[str] = Header(default
                 yield delta
             logger.info(
                 "ingest.preview.done request_id=%s chunks=%s chars=%s elapsed_ms=%s",
-                request_id, chunk_count, char_count,
+                request_id,
+                chunk_count,
+                char_count,
                 int((time.perf_counter() - started) * 1000),
             )
         except Exception:
             logger.exception(
                 "ingest.preview.error request_id=%s chunks=%s chars=%s elapsed_ms=%s",
-                request_id, chunk_count, char_count,
+                request_id,
+                chunk_count,
+                char_count,
                 int((time.perf_counter() - started) * 1000),
             )
             yield f"\n[ERROR] {stream_error_text(request_id)}"
@@ -138,10 +144,15 @@ def commit_one(req: CommitReq, used_slugs: set) -> dict:
 
 def batch_case_record(index: int, raw: str, case: dict) -> dict:
     return {
-        "index": index, "raw": raw, "ok": True,
-        "title": case.get("title", ""), "category": case.get("category", "未分类"),
-        "signatures": case.get("signatures", []) or [], "components": case.get("components", []) or [],
-        "background": case.get("background", ""), "diagnosis": case.get("diagnosis", ""),
+        "index": index,
+        "raw": raw,
+        "ok": True,
+        "title": case.get("title", ""),
+        "category": case.get("category", "未分类"),
+        "signatures": case.get("signatures", []) or [],
+        "components": case.get("components", []) or [],
+        "background": case.get("background", ""),
+        "diagnosis": case.get("diagnosis", ""),
         "solution": case.get("solution", ""),
     }
 
@@ -166,25 +177,41 @@ def ingest_preview_batch(req: PreviewBatchReq):
                 acc += delta
                 out.put({"type": "delta", "request_id": request_id, "index": i, "text": delta})
             case = json.loads(normalize_json_text(acc))
-            out.put({
-                "type": "done",
-                "request_id": request_id,
-                "index": i,
-                "record": batch_case_record(i, rec, case),
-            })
+            out.put(
+                {
+                    "type": "done",
+                    "request_id": request_id,
+                    "index": i,
+                    "record": batch_case_record(i, rec, case),
+                }
+            )
             logger.info(
                 "ingest.preview_batch.item.done request_id=%s index=%s chunks=%s chars=%s elapsed_ms=%s",
-                request_id, i, chunk_count, len(acc), int((time.perf_counter() - started) * 1000),
+                request_id,
+                i,
+                chunk_count,
+                len(acc),
+                int((time.perf_counter() - started) * 1000),
             )
         except Exception:
             logger.exception(
                 "ingest.preview_batch.item.error request_id=%s index=%s chunks=%s chars=%s elapsed_ms=%s",
-                request_id, i, chunk_count, len(acc), int((time.perf_counter() - started) * 1000),
+                request_id,
+                i,
+                chunk_count,
+                len(acc),
+                int((time.perf_counter() - started) * 1000),
             )
-            out.put({
-                "type": "error", "request_id": request_id, "index": i, "raw": rec,
-                "code": ErrorCode.INTERNAL_ERROR.code, "error": stream_error_text(request_id),
-            })
+            out.put(
+                {
+                    "type": "error",
+                    "request_id": request_id,
+                    "index": i,
+                    "raw": rec,
+                    "code": ErrorCode.INTERNAL_ERROR.code,
+                    "error": stream_error_text(request_id),
+                }
+            )
         finally:
             out.put({"type": "finished", "request_id": request_id, "index": i})
 
@@ -210,7 +237,11 @@ def ingest_preview_batch(req: PreviewBatchReq):
                 fut.result()
         logger.info(
             "ingest.preview_batch.done request_id=%s records=%s ok=%s failed=%s elapsed_ms=%s",
-            request_id, len(records), ok, failed, int((time.perf_counter() - started) * 1000),
+            request_id,
+            len(records),
+            ok,
+            failed,
+            int((time.perf_counter() - started) * 1000),
         )
         yield ndjson({"type": "summary", "request_id": request_id, "count": len(records), "ok": ok, "failed": failed})
 

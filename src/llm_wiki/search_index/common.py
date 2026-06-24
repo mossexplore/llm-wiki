@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """检索索引后端共享接口、路径和 Markdown 案例解析。"""
+
 from __future__ import annotations
 
 import datetime
@@ -13,9 +14,20 @@ from llm_wiki.common.markdown_case import annotate, section, split_frontmatter
 from llm_wiki.common.paths import ROOT
 
 __all__ = [
-    "CASES_DIR", "DB_PATH", "SCHEMA_PATH", "MYSQL_SCHEMA_PATH", "logger",
-    "SearchBackend", "case_from_file", "annotate", "section", "done",
-    "exact_signatures", "EXACT_SIGNATURE_MIN_LEN", "iter_search_tokens", "is_cjk",
+    "CASES_DIR",
+    "DB_PATH",
+    "SCHEMA_PATH",
+    "MYSQL_SCHEMA_PATH",
+    "logger",
+    "SearchBackend",
+    "case_from_file",
+    "annotate",
+    "section",
+    "done",
+    "exact_signatures",
+    "EXACT_SIGNATURE_MIN_LEN",
+    "iter_search_tokens",
+    "is_cjk",
 ]
 
 # 检索分词:英文词(>=3 字母)、数字错误码(>=3 位)、连续中文。两个后端共用,
@@ -31,6 +43,7 @@ def iter_search_tokens(log: str) -> list:
 def is_cjk(token: str) -> bool:
     """token 是否以中日韩统一表意文字开头(用于区分中英文后处理)。"""
     return bool(token) and "一" <= token[0] <= "鿿"
+
 
 CASES_DIR = ROOT / "wiki" / "cases"
 DB_PATH = pathlib.Path(os.environ.get("SEARCH_DB", ROOT / "index" / "search.db"))
@@ -67,13 +80,26 @@ class SearchBackend:
       signatures(list), components(list), background, diagnosis, solution, updated_at
     """
 
-    def available(self) -> bool: raise NotImplementedError
-    def reindex_all(self) -> int: raise NotImplementedError
-    def index_case(self, case: dict) -> None: raise NotImplementedError
-    def remove_case(self, case_id: str) -> None: raise NotImplementedError
-    def search(self, log: str, limit: int = 3) -> dict | None: raise NotImplementedError
-    def stats(self) -> dict: raise NotImplementedError
-    def label(self) -> str: raise NotImplementedError
+    def available(self) -> bool:
+        raise NotImplementedError
+
+    def reindex_all(self) -> int:
+        raise NotImplementedError
+
+    def index_case(self, case: dict) -> None:
+        raise NotImplementedError
+
+    def remove_case(self, case_id: str) -> None:
+        raise NotImplementedError
+
+    def search(self, log: str, limit: int = 3) -> dict | None:
+        raise NotImplementedError
+
+    def stats(self) -> dict:
+        raise NotImplementedError
+
+    def label(self) -> str:
+        raise NotImplementedError
 
 
 def case_from_file(path: pathlib.Path) -> dict | None:
@@ -104,8 +130,7 @@ def case_from_file(path: pathlib.Path) -> dict | None:
         "background": section(body, "问题背景"),
         "diagnosis": section(body, "定位过程"),
         "solution": section(body, "解决方案"),
-        "updated_at": datetime.datetime.fromtimestamp(
-            path.stat().st_mtime).isoformat(timespec="seconds"),
+        "updated_at": datetime.datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds"),
     }
 
 

@@ -3,6 +3,7 @@
 CHAT_DB 在 llm_wiki.chat_store.common 导入时读取,所以必须在任何 store 模块被
 导入之前设置 —— conftest 在收集用例前最先导入,正好满足。
 """
+
 import os
 import pathlib
 import tempfile

@@ -20,6 +20,7 @@ ingest.py — LLM Wiki 入库辅助管线
 依赖: pip install pyyaml openai
 配置: config.yaml / config.example.yaml 提供本地样例;也可用 INGEST_CONFIG 指定其它路径。
 """
+
 import argparse
 import datetime
 import json
@@ -60,10 +61,10 @@ EXTRACT_PROMPT = """你是日志排查知识库的整理助手。把下面的原
 ---"""
 
 
-_clients: dict = {}    # section -> (OpenAI client, model, config_key);按配置段缓存,配置变化时自动刷新
-_clients_lock = threading.Lock()    # 批量预览用线程池并发取 client,_clients 读写需加锁
+_clients: dict = {}  # section -> (OpenAI client, model, config_key);按配置段缓存,配置变化时自动刷新
+_clients_lock = threading.Lock()  # 批量预览用线程池并发取 client,_clients 读写需加锁
 
-_config_cache = None   # (mtime, data):按文件 mtime 缓存解析结果,避免每次请求都读盘+解析 YAML
+_config_cache = None  # (mtime, data):按文件 mtime 缓存解析结果,避免每次请求都读盘+解析 YAML
 _config_lock = threading.Lock()
 
 
@@ -82,7 +83,7 @@ def case_tags(c: dict) -> list:
     raw = c.get("tags") or []
     if isinstance(raw, str):
         raw = [raw]
-    tags = list(raw)            # 复制,避免就地 append 修改调用方传入的列表
+    tags = list(raw)  # 复制,避免就地 append 修改调用方传入的列表
     category = c.get("category")
     if category:
         tags.append(category)
@@ -135,7 +136,9 @@ def _load_config_data() -> dict:
                 os.environ["NO_PROXY"] = "127.0.0.1"
             logger.info(
                 "ingest.config.loaded env=%s config_path=%s no_proxy=%s",
-                env, CONFIG_PATH, os.environ.get("NO_PROXY", ""),
+                env,
+                CONFIG_PATH,
+                os.environ.get("NO_PROXY", ""),
             )
             _config_cache = (mtime, data)
         return _config_cache[1]
@@ -153,23 +156,6 @@ def _client_and_model(section: str = "openai"):
             _clients[section] = (client, model, config_key)
         client, model, _ = _clients[section]
     return client, model
-
-
-def call_llm(prompt: str) -> str:
-    """一次性返回:把原始记录整理成结构化案例(纯 JSON)。CLI 入库用。
-
-    用 response_format=json_object 强制 JSON;signatures 原文照搬的约束写在 EXTRACT_PROMPT 里。
-    """
-    client, model = _client_and_model()
-    resp = client.chat.completions.create(
-        model=model,
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-    if not getattr(resp, "choices", None):     # 网关报错时 choices 可能为 None
-        raise RuntimeError(f"模型未返回 choices(网关或鉴权异常):{resp}")
-    return (resp.choices[0].message.content or "")
 
 
 def stream_llm(prompt: str):
@@ -219,8 +205,7 @@ def extract(raw: str) -> dict:
     return data
 
 
-def to_markdown(c: dict, raw_rel: str, status: str = "draft",
-                confidence: str = "medium") -> str:
+def to_markdown(c: dict, raw_rel: str, status: str = "draft", confidence: str = "medium") -> str:
     today = datetime.date.today().isoformat()
     fm = {
         "id": slugify(c["title"]),
@@ -229,19 +214,19 @@ def to_markdown(c: dict, raw_rel: str, status: str = "draft",
         "description": case_description(c),
         "category": c.get("category", "未分类"),
         "tags": case_tags(c),
-        "status": status,                        # CLI 默认 draft;web 端复核确认后传 verified
+        "status": status,  # CLI 默认 draft;web 端复核确认后传 verified
         "confidence": confidence,
         "signatures": c.get("signatures", []),
         "components": c.get("components", []),
         "created": today,
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-        "sources": [raw_rel],                    # 溯源指回 raw/
+        "sources": [raw_rel],  # 溯源指回 raw/
     }
     front = yaml.safe_dump(fm, allow_unicode=True, sort_keys=False)
     body = (
-        f"## 问题背景\n{c.get('background','')}\n\n"
-        f"## 定位过程\n{c.get('diagnosis','')}\n\n"
-        f"## 解决方案\n{c.get('solution','')}\n\n"
+        f"## 问题背景\n{c.get('background', '')}\n\n"
+        f"## 定位过程\n{c.get('diagnosis', '')}\n\n"
+        f"## 解决方案\n{c.get('solution', '')}\n\n"
         f"## Citations\n\n"
         f"[1] [原始排查记录](/{raw_rel})\n"
     )
@@ -286,12 +271,14 @@ def update_indexes() -> None:
         "* [故障案例](cases/) - 单次事故记录,以 signatures 作为检索锚点。",
     ]
     if concept_paths:
-        root_parts.extend([
-            "",
-            "## Concepts",
-            "",
-            "* [通用概念](concepts/) - 跨案例综合出的排查规律。",
-        ])
+        root_parts.extend(
+            [
+                "",
+                "## Concepts",
+                "",
+                "* [通用概念](concepts/) - 跨案例综合出的排查规律。",
+            ]
+        )
     (WIKI_DIR / "index.md").write_text("\n".join(root_parts) + "\n", encoding="utf-8")
 
     if concept_dir.exists():
@@ -309,22 +296,20 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     ap = argparse.ArgumentParser()
     ap.add_argument("source", help="原始记录文件路径,或 - 表示从 stdin 读")
-    ap.add_argument("--id", default=None,
-                    help="记录标识(如工单号),用于命名 raw 文件;不传则用时间戳自动生成")
+    ap.add_argument("--id", default=None, help="记录标识(如工单号),用于命名 raw 文件;不传则用时间戳自动生成")
     args = ap.parse_args()
 
     # 没有工单号系统时,用 时分秒 自动生成标识,保证同一天多次入库不重名
     ident = args.id or datetime.datetime.now().strftime("%H%M%S")
 
-    raw = sys.stdin.read() if args.source == "-" else \
-        pathlib.Path(args.source).read_text(encoding="utf-8")
+    raw = sys.stdin.read() if args.source == "-" else pathlib.Path(args.source).read_text(encoding="utf-8")
 
-    raw_path = archive_raw(raw, ident)                 # ① 存档不可变层
+    raw_path = archive_raw(raw, ident)  # ① 存档不可变层
     raw_rel = str(raw_path.relative_to(ROOT))
 
     try:
-        case = extract(raw)                            # ② LLM 结构化
-    except RuntimeError as e:                           # 配置缺失等,友好退出
+        case = extract(raw)  # ② LLM 结构化
+    except RuntimeError as e:  # 配置缺失等,友好退出
         sys.exit(str(e))
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     out = DRAFTS_DIR / f"{slugify(case['title'])}.md"
