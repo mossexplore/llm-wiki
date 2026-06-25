@@ -168,6 +168,8 @@ storage:
 
 两条路径都走 `config.yaml` 里 OpenAI 兼容接口的真流式；区别只在于「是否把检索到的 wiki 资料注入本轮上下文」。命中知识库时的自定义提示词可用环境变量 `CHAT_WIKI_PROMPT` 覆盖，未命中兜底提示词用 `CHAT_SYSTEM_PROMPT`。
 
+> 检索是**可插拔**的：对话编排（`chat/agent.py`）只依赖 LLM 接入层，检索通过 `chat/retriever.py` 的 `Retriever` 接口注入。默认用 `WikiRetriever`（本地知识库 RAG），换成 `NullRetriever` 即为不带检索的纯对话——此时完全不加载检索与入库代码，便于把对话能力单独复用。
+
 对话生成中和生成完成后都会持续展示并落库时延诊断信息：
 
 - **检索耗时**：本地知识库检索花费。
@@ -280,10 +282,11 @@ sources:
 ├── raw/sources/               # 入库时生成的不可变原始记录（运行时产生）
 ├── src/llm_wiki/              # 可安装 Python 包（src layout）
 │   ├── backend/               # FastAPI 后端、API 路由、静态前端挂载
-│   ├── knowledge/             # 入库、检索、图谱、Agent 与 OKF 检查
+│   ├── knowledge/             # 入库、检索、图谱与 OKF 检查
+│   ├── chat/                  # 对话编排：纯 LLM 生成(agent) + 可注入检索(retriever)
 │   ├── search_index/          # 检索索引入口与 SQLite / MySQL 后端
 │   ├── chat_store/            # 对话持久化：共享 CRUD 基类 + SQLite / MySQL 方言
-│   └── common/                # 路径、存储/日志配置、Markdown 案例解析等共享模块
+│   └── common/                # 路径、LLM 接入(llm)、存储/日志配置、Markdown 案例解析等共享模块
 ├── frontend/                  # 静态前端，无构建步骤
 │   ├── index.html             # 单页应用入口
 │   ├── css/styles.css         # 页面样式

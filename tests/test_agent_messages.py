@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from llm_wiki.knowledge import agent
+from llm_wiki.chat import agent
 
 
 def test_build_answer_messages_compatible_matches_dict_wrapper():

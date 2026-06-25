@@ -24,7 +24,7 @@ from .mysql_backend import MySQLSearch
 from .sqlite_backend import SqliteSearch
 
 # case_from_file / exact_signatures 在此聚合再导出,供 query.py、search_sync 复用。
-__all__ = ["SearchBackend", "case_from_file", "exact_signatures", "logger", "backend", "make_backend"]
+__all__ = ["SearchBackend", "case_from_file", "exact_signatures", "logger", "get_backend", "make_backend"]
 
 
 def make_backend() -> SearchBackend:
@@ -33,12 +33,24 @@ def make_backend() -> SearchBackend:
     return SqliteSearch()
 
 
-# 模块级单例,供 query.py / llm_wiki.backend.server 复用
-backend: SearchBackend = make_backend()
+_backend: SearchBackend | None = None  # 惰性单例:首次用到检索时才按配置构建后端
+
+
+def get_backend() -> SearchBackend:
+    """返回进程内共享的检索后端;首次调用时按配置构建。
+
+    惰性化是为了「import search_index ≠ 立刻建后端读配置」—— 只引用 case_from_file 等
+    纯函数(如 search_sync、纯对话路径)时,不会触发后端初始化的副作用。
+    """
+    global _backend
+    if _backend is None:
+        _backend = make_backend()
+    return _backend
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    backend = get_backend()
     cmd = sys.argv[1] if len(sys.argv) > 1 else "stats"
     if cmd == "reindex":
         n = backend.reindex_all()

@@ -21,15 +21,16 @@ def _clear_chat_store():
 def client(monkeypatch):
     captured = {}
 
-    def fake_retrieve(_text):
-        return {"source": "llm", "mode": "none", "elapsed_ms": 1, "refs": [], "context": []}
+    class FakeRetriever:
+        def retrieve(self, _text):
+            return {"source": "llm", "mode": "none", "elapsed_ms": 1, "refs": [], "context": []}
 
     def fake_stream_messages_compatible(messages, message_format):
         captured["messages"] = messages
         captured["stream_message_format"] = message_format
         yield "ok"
 
-    monkeypatch.setattr(chat_api.agent, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_api, "RETRIEVER", FakeRetriever())
     monkeypatch.setattr(chat_api.agent, "stream_messages_compatible", fake_stream_messages_compatible)
 
     app = FastAPI()

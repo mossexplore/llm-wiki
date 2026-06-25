@@ -13,8 +13,9 @@ agent.py — 对话 Agent 的「先检索、后生成」编排层(RAG)
 
 两条路径都走 OpenAI 兼容接口的真流式;区别只在于「是否把检索到的 wiki 资料注入上下文」。
 
+检索决策(retrieve)已拆到 retriever.py;本模块只负责「拿到决策后怎么生成」。
+
 可调项(环境变量):
-  - CHAT_FUZZY_THRESHOLD  模糊命中判为「关联度大」的最低分,默认 1.0(bm25 取负,越大越相关)。
   - CHAT_WIKI_PROMPT      命中知识库时的自定义系统提示词(覆盖默认 RAG 提示词)。
   - CHAT_SYSTEM_PROMPT    未命中、纯大模型兜底时的系统提示词。
 """
@@ -25,16 +26,9 @@ import logging
 import os
 import time
 
-from llm_wiki.common.markdown_case import read_doc, section
-from llm_wiki.common.paths import ROOT
+from llm_wiki.common.llm import client_and_model, load_config
 
-from . import ingest, query
-
-CASES_DIR = ROOT / "wiki" / "cases"
 logger = logging.getLogger("log_wiki.agent")
-
-# 模糊命中判定为「关联度大」的最低分(bm25 取负后,越大越相关)。可用环境变量覆盖。
-FUZZY_THRESHOLD = float(os.environ.get("CHAT_FUZZY_THRESHOLD", "1.0"))
 
 # 命中知识库时的自定义提示词:让大模型「基于检索到的 wiki 资料」作答(RAG)。
 DEFAULT_WIKI_PROMPT = (
@@ -53,62 +47,6 @@ DEFAULT_CHAT_PROMPT = (
     "不确定时要诚实说明,不要编造不存在的日志、错误码或结论。请用中文回答。"
 )
 CHAT_SYSTEM_PROMPT = os.environ.get("CHAT_SYSTEM_PROMPT") or DEFAULT_CHAT_PROMPT
-
-
-def _case_context(file_rel: str) -> dict | None:
-    """读 wiki/cases/<file>,取标题与各正文段落,作为 RAG 上下文。"""
-    path = (ROOT / file_rel).resolve()
-    try:
-        path.relative_to(CASES_DIR.resolve())
-    except ValueError:
-        return None
-    if not path.exists():
-        return None
-    fm, body = read_doc(path)
-    return {
-        "title": fm.get("title") or path.stem,
-        "file": file_rel,
-        "background": section(body, "问题背景"),
-        "diagnosis": section(body, "定位过程"),
-        "solution": section(body, "解决方案"),
-    }
-
-
-def retrieve(text: str) -> dict:
-    """决定本轮怎么答:返回决策字典。
-
-    {
-      "source":  "wiki" | "llm",
-      "mode":    "exact" | "fuzzy" | "none",
-      "elapsed_ms": int,                 # 检索耗时
-      "refs":    [{"file","title"}],     # source=wiki 时引用的案例(给前端展示)
-      "context": [{"title","file","background","diagnosis","solution"}],  # 注入大模型的资料
-    }
-    """
-    res = query.search(text)
-    mode = res.get("mode", "none")
-    hits = res.get("hits", []) or []
-    elapsed = res.get("elapsed_ms", 0)
-
-    picked_files: list[dict] = []
-    if mode == "exact" and hits:
-        picked_files = [{"file": h["file"], "title": h.get("title", "")} for h in hits[:3]]
-    elif mode == "fuzzy" and hits:
-        top = hits[0]
-        if isinstance(top.get("score"), (int, float)) and top["score"] >= FUZZY_THRESHOLD:
-            for h in hits[:2]:
-                if isinstance(h.get("score"), (int, float)) and h["score"] < FUZZY_THRESHOLD:
-                    continue
-                picked_files.append({"file": h["file"], "title": h.get("title", "")})
-
-    if picked_files:
-        context = [c for c in (_case_context(p["file"]) for p in picked_files) if c]
-        if context:
-            refs = [{"file": c["file"], "title": c["title"]} for c in context]
-            return {"source": "wiki", "mode": mode, "elapsed_ms": elapsed, "refs": refs, "context": context}
-
-    # 关联度小 / 无命中 → 交给大模型(不带知识库资料)
-    return {"source": "llm", "mode": mode, "elapsed_ms": elapsed, "refs": [], "context": []}
 
 
 def _context_block(context: list, related: bool) -> str:
@@ -183,7 +121,7 @@ def _bool_config(value, default: bool = True) -> bool:
 
 def _chat_thinking_enabled() -> bool:
     """读取 chat 段 Thinking 开关;默认启用,禁用时才下发 provider 扩展参数。"""
-    cfg = ingest.load_config("chat")
+    cfg = load_config("chat")
     value = cfg.get("thinking", cfg.get("think", cfg.get("enable_thinking")))
     return _bool_config(value, default=True)
 
@@ -307,7 +245,7 @@ def stream_langchain_chunks(chunks, model: str = "", started: float | None = Non
 
 def stream_messages(messages):
     """统一的大模型流式调用:逐段 yield 文本增量。对话用 config.yaml 的 chat 段(可与写入不同)。"""
-    client, model = ingest._client_and_model("chat")
+    client, model = client_and_model("chat")
     thinking_enabled = _chat_thinking_enabled()
     stats = message_stats(messages)
     started = time.perf_counter()
@@ -338,7 +276,7 @@ def stream_messages_langchain(messages):
     except ImportError as exc:
         raise RuntimeError("使用 message_format=langchain 需要安装 langchain-openai。") from exc
 
-    cfg = ingest.load_config("chat")
+    cfg = load_config("chat")
     model = cfg.get("model", "gpt-4o")
     thinking_enabled = _chat_thinking_enabled()
     stats = message_stats(messages)

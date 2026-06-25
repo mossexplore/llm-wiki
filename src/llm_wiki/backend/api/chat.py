@@ -7,8 +7,9 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from llm_wiki import chat_store
+from llm_wiki.chat import agent
+from llm_wiki.chat.retriever import WikiRetriever
 from llm_wiki.chat_store import MessageMetrics
-from llm_wiki.knowledge import agent
 
 from ..app_logging import logger
 from ..error_codes import ErrorCode, raise_api_error, stream_error_text
@@ -17,6 +18,9 @@ from ..schemas import ChatMessageReq, FeedbackReq, SessionCreateReq
 from ..utils import ndjson
 
 router = APIRouter()
+
+# 对话用的检索器。默认走本地 wiki 检索(RAG);只想要纯对话时可换成 retriever.NullRetriever()。
+RETRIEVER = WikiRetriever()
 
 FEEDBACK_INFO_TYPE_LABELS = {
     "not_helpful": "回答没有用",
@@ -175,7 +179,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 }
             )
             retrieve_started = time.perf_counter()
-            decision = agent.retrieve(text)
+            decision = RETRIEVER.retrieve(text)
             retrieval_ms = decision.get("elapsed_ms", int((time.perf_counter() - retrieve_started) * 1000))
             source = decision["source"]
             mode = decision["mode"]

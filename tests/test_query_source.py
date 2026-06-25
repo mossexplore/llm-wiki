@@ -9,7 +9,7 @@ class _BackendUnavailable:
 
 
 def test_query_marks_none_source_when_backend_unavailable_and_local_search_disabled(monkeypatch):
-    monkeypatch.setattr(query.search_index, "backend", _BackendUnavailable())
+    monkeypatch.setattr(query.search_index, "get_backend", lambda: _BackendUnavailable())
     monkeypatch.setattr(query.storage_config, "local_search", lambda: False)
 
     res = query.search("anything")
@@ -37,7 +37,7 @@ signatures:
 """,
         encoding="utf-8",
     )
-    monkeypatch.setattr(query.search_index, "backend", _BackendUnavailable())
+    monkeypatch.setattr(query.search_index, "get_backend", lambda: _BackendUnavailable())
     monkeypatch.setattr(query.storage_config, "local_search", lambda: True)
     monkeypatch.setattr(query, "ROOT", root)
     monkeypatch.setattr(query, "CASES_DIR", cases_dir)

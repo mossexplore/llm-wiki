@@ -29,11 +29,12 @@ def build_search_index() -> None:
         if not storage_config.auto_reindex_on_startup():
             logger.info("search_index.reindex_all skipped by storage.auto_reindex_on_startup=false")
             return
-        if search_index.backend.available():
-            n = search_index.backend.reindex_all()
+        backend = search_index.get_backend()
+        if backend.available():
+            n = backend.reindex_all()
             logger.info(
-                f"search_index.reindex_all built={n} backend={type(search_index.backend).__name__} "
-                f"db={search_index.backend.label()}"
+                f"search_index.reindex_all built={n} backend={type(backend).__name__} "
+                f"db={backend.label()}"
             )
         else:
             logger.warning("FTS5 不可用,检索将回退到文件扫描(功能正常,速度较慢)。")

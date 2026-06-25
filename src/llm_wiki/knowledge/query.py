@@ -78,7 +78,7 @@ def search(log: str) -> dict:
 
     storage.local_search=false 时关闭文件兜底:只认数据库索引结果,后端不可用即判无命中。
     """
-    res = search_index.backend.search(log)
+    res = search_index.get_backend().search(log)
     if res is not None:
         return res
     if not storage_config.local_search():
