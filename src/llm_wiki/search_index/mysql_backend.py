@@ -29,6 +29,7 @@ from .common import (
 class MySQLSearch(SearchBackend):
     def __init__(self):
         self._ok = None
+        self._built = False
 
     def label(self) -> str:
         return get_mysql_label()
@@ -129,6 +130,10 @@ class MySQLSearch(SearchBackend):
             return n
 
     def ensure_built(self) -> None:
+        # 进程内只做一次空库自检:首次确认非空(或自动重建)后置位 _built,
+        # 避免每次 search() 都多打一次 SELECT count(*) 往返(热路径)。
+        if self._built:
+            return
         if not self.available():
             return
         with get_mysql_client().begin() as conn:
@@ -136,6 +141,7 @@ class MySQLSearch(SearchBackend):
             empty = row["n"] == 0
         if empty and any(case_from_file(p) for p in CASES_DIR.rglob("*.md")):
             self.reindex_all()
+        self._built = True
 
     def search(self, log: str, limit: int = 3) -> dict | None:
         if not self.available():
@@ -143,6 +149,17 @@ class MySQLSearch(SearchBackend):
         import time
 
         started = time.perf_counter()
+        try:
+            return self._search(conn_started=started, log=log, limit=limit)
+        except Exception:
+            # available() 只兜底连接/建表;此处兜底运行期查询异常(collation 冲突、
+            # 旧表残留导致 FULLTEXT 列集不匹配等),返回 None 让 query.search() 回退文件扫描,
+            # 与 SQLite 后端对 MATCH 的容错行为对齐。
+            logger.exception("search_index mysql query failed, fallback to file scan")
+            return None
+
+    def _search(self, conn_started, log: str, limit: int) -> dict:
+        started = conn_started
         self.ensure_built()
         log_low = log.lower()
         with get_mysql_client().begin() as conn:
@@ -162,8 +179,16 @@ class MySQLSearch(SearchBackend):
             for row in sig_rows:
                 matched.setdefault(row["case_id"], []).append(row["signature"])
             if matched:
+                # 精确命中按相关性排序并截断到 limit:命中 signature 数 > 最长 signature 长度
+                # > case_id(确定性兜底)。否则一条通用 signature 命中多案例时会无序、无界返回,
+                # 破坏 search(log, limit) 契约。
+                ordered = sorted(
+                    matched.items(),
+                    key=lambda kv: (len(kv[1]), max(len(s) for s in kv[1]), kv[0]),
+                    reverse=True,
+                )[:limit]
                 hits = []
-                for cid, sigs in matched.items():
+                for cid, sigs in ordered:
                     r = (
                         conn.execute(
                             _sql_text(
