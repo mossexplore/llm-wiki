@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from llm_wiki import search_index
 from llm_wiki.common import storage_config
 
-from .api import chat, graph, ingest, knowledge, search, static_pages
+from .api import chat, eval, graph, ingest, knowledge, search, static_pages
 from .core.app_logging import LOG_DIR, logger
 from .core.config import FRONTEND_DIR, ROOT
 from .core.middleware import request_logging_middleware
@@ -56,6 +56,7 @@ register_exception_handlers(app)
 app.include_router(ingest.router)
 app.include_router(knowledge.router)
 app.include_router(search.router)
+app.include_router(eval.router)
 app.include_router(graph.router)
 app.include_router(chat.router)
 app.include_router(static_pages.router)

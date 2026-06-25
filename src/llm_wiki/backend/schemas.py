@@ -43,6 +43,10 @@ class QueryReq(BaseModel):
     log: str
 
 
+class EvalRunReq(BaseModel):
+    k: Optional[int] = 3
+
+
 class SessionScopeReq(BaseModel):
     """读取/删除类操作的统一请求体:可选 user_id 用于按用户隔离。
 

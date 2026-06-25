@@ -57,7 +57,10 @@
       chatStreaming: false,
       chatStreamText: '',           // 流式生成中的临时文本
       chatStreamMeta: null,         // 流式生成中的来源信息 {source,mode,refs}
-      chatStreamStatus: null        // 流式状态与时延 {stage,retrieval_ms,first_delta_ms,elapsed_ms}
+      chatStreamStatus: null,       // 流式状态与时延 {stage,retrieval_ms,first_delta_ms,elapsed_ms}
+      evalK: 3,                     // 评测 top-k:1 | 3 | 5
+      evalRunning: false,
+      evalReport: null              // /api/eval/run 返回的报告
     };
 
     const root = document.getElementById('root');
@@ -67,6 +70,7 @@
     const tabQuery = document.getElementById('tab-query');
     const tabGraph = document.getElementById('tab-graph');
     const tabChat = document.getElementById('tab-chat');
+    const tabEval = document.getElementById('tab-eval');
 
     function iconBook() { return '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path></svg>'; }
     function iconCheck() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>'; }
@@ -292,8 +296,10 @@
       tabQuery.classList.toggle('on', mode === 'query');
       tabGraph.classList.toggle('on', mode === 'graph');
       tabChat.classList.toggle('on', mode === 'chat');
+      if (tabEval) tabEval.classList.toggle('on', mode === 'eval');
       if (mode === 'graph' && !state.graph && !state.graphLoading) loadGraph();
       if (mode === 'chat' && !state.chatSessions.length && !state.chatSessionsLoading) loadChatSessions();
+      if (mode === 'eval' && !state.evalReport && !state.evalRunning) runEval();
       // 进入列表页:首次为空、或刚入库过(dirty)都自动刷新,无需手点「刷新」
       if (mode === 'list' && !state.knowledgeLoading &&
           (!state.knowledgeItems.length || state.knowledgeDirty)) {
@@ -479,6 +485,7 @@
       tabQuery.onclick = () => setMode('query');
       tabGraph.onclick = () => setMode('graph');
       tabChat.onclick = () => setMode('chat');
+      if (tabEval) tabEval.onclick = () => setMode('eval');
       if (state.mode === 'chat' && typeof bindChatEvents === 'function') bindChatEvents();
       root.querySelectorAll('.step.click').forEach(el => el.onclick = () => setStep(Number(el.dataset.step)));
 
@@ -507,6 +514,11 @@
       bind('reloadKnowledgeDetail', () => selectKnowledge(state.knowledgeSelected));
       bind('reloadGraph', loadGraph);
       bind('resetGraphLayout', resetGraphLayout);
+      bind('runEval', runEval);
+      root.querySelectorAll('[data-eval-k]').forEach(el => el.onclick = e => {
+        state.evalK = Number(e.currentTarget.dataset.evalK);
+        runEval();
+      });
       root.querySelectorAll('[data-knowledge-file]').forEach(el => el.onclick = e => selectKnowledge(e.currentTarget.dataset.knowledgeFile));
       root.querySelectorAll('[data-del-file]').forEach(el => el.onclick = e => {
         e.stopPropagation();   // 阻止冒泡到外层 item 触发选中
@@ -548,9 +560,10 @@
       else if (state.mode === 'list') main = renderKnowledgeMain();
       else if (state.mode === 'query') main = renderQueryMain();
       else if (state.mode === 'chat') main = renderChatMain();
+      else if (state.mode === 'eval') main = renderEvalMain();
       else main = renderGraphMain();
-      // list / chat 是全宽双栏布局,不带左侧 rail
-      root.innerHTML = (state.mode === 'list' || state.mode === 'chat')
+      // list / chat / eval 是全宽布局,不带左侧 rail
+      root.innerHTML = (state.mode === 'list' || state.mode === 'chat' || state.mode === 'eval')
         ? `<div class="main">${main}</div>`
         : `
           <div class="grid">

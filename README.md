@@ -250,6 +250,7 @@ sources:
 | `PUT`    | `/api/knowledge/{case_file}`   | 更新单条知识并刷新索引。                        |
 | `DELETE` | `/api/knowledge/{case_file}`   | 删除单条知识，保留 raw 原始记录。               |
 | `POST`   | `/api/query`                   | 按日志或报错信息检索知识，返回检索耗时（毫秒）。 |
+| `POST`   | `/api/eval/run`                | 在隔离沙箱跑检索评测，返回 recall@k / MRR 报告。 |
 | `GET`    | `/api/graph`                   | 返回知识图谱节点和边。                          |
 | `GET`    | `/api/kb/stats`                | 返回案例数、草稿数、signature 数和更新时间。    |
 | `GET`    | `/api/examples/ingest`         | 返回一条示例原始记录和示例结构化案例。          |
@@ -313,6 +314,22 @@ uvicorn --app-dir src llm_wiki.backend.server:app --reload --port 8000
 ruff check .
 pytest
 ```
+
+### 检索质量评测
+
+`llm_wiki.search_index.eval` 自带固定语料 + 标注查询,量化检索的 recall@k / MRR,作为优化检索(精确命中、模糊召回、后续重排/向量)前后的对比基线。三处入口共用同一套数据集与指标:
+
+- **Web**:「评测」tab 一键运行,看总体指标卡、按类型分组(exact/lexical/semantic)与逐条结果。运行在隔离的 SQLite 沙箱里,不触碰生产检索索引。
+- **API**:`POST /api/eval/run`(`{"k": 1|3|5}`,缺省 3),返回 recall@k / MRR / 命中模式分布 / 逐条结果。
+- **CLI / 回归门槛**:
+
+```bash
+python -m llm_wiki.search_index.eval                      # 评 SQLite(FTS5)沙箱后端
+EVAL_BACKEND=mysql python -m llm_wiki.search_index.eval   # 评 MySQL(FULLTEXT)后端,需配好 storage.mysql
+pytest tests/test_retrieval_eval.py                       # 回归门槛:指标跌破地板线即失败
+```
+
+查询按 `exact / lexical / semantic` 分组——`semantic`(换种说法、词面不重合)是纯词法检索的天然短板,基线会如实暴露这个召回缺口。
 
 CI（`.github/workflows/ci.yml`）会在 Python 3.9 与 3.12 上运行 `ruff check` 和 `pytest`。测试默认把对话库指向临时文件，不会污染本地 `db/chat.db`。
 

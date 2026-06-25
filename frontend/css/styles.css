@@ -725,3 +725,35 @@
       .desktop-only { display: none; }
       .mobile-only { display: block; }
     }
+
+    .eval-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .eval-metric { background: var(--surface-inset); border-radius: var(--r-md); padding: 14px 16px; }
+    .eval-metric-label { font-size: 12px; color: var(--text-mute); }
+    .eval-metric-value { font-size: 25px; font-weight: 650; color: var(--text); margin-top: 5px; letter-spacing: -0.01em; }
+
+    .eval-khead, .eval-krow {
+      display: grid; grid-template-columns: 1.6fr 1fr 1fr 0.9fr; gap: 8px; align-items: center;
+    }
+    .eval-khead { font-size: 11px; color: var(--text-faint); padding: 0 10px 8px; }
+    .eval-krow { font-size: 13px; color: var(--text-dim); padding: 9px 10px; border-top: 1px solid var(--line-faint); border-radius: var(--r-sm); }
+    .eval-khead .mono, .eval-krow .mono { text-align: right; }
+    .eval-krow.weak { background: var(--warning-soft); color: var(--warning); }
+    .eval-krow-total { font-weight: 650; color: var(--text); border-top: 1px solid var(--line-strong); }
+
+    .eval-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 10px; border-top: 1px solid var(--line-faint);
+    }
+    .eval-row:first-child { border-top: none; }
+    .eval-row.miss { background: var(--danger-soft); border-radius: var(--r-sm); border-top-color: transparent; }
+    .eval-row-q { flex: 1; min-width: 0; font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .eval-row.miss .eval-row-q { color: var(--danger); }
+    .eval-rank { font-size: 12px; color: var(--text-mute); min-width: 32px; text-align: right; }
+    .eval-rank.miss { color: var(--danger); font-weight: 650; }
+    .eval-kind-exact { color: var(--text-mute); }
+    .eval-kind-lexical { color: var(--accent-bright); background: var(--accent-soft); border-color: transparent; }
+    .eval-kind-semantic { color: var(--warning); background: var(--warning-soft); border-color: transparent; }
+
+    @media (max-width: 840px) {
+      .eval-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
