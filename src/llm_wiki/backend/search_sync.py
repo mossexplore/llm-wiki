@@ -2,7 +2,7 @@ import pathlib
 
 from llm_wiki import search_index
 
-from .app_logging import logger
+from .core.app_logging import logger
 
 
 def index_case_file(case_path: pathlib.Path) -> None:

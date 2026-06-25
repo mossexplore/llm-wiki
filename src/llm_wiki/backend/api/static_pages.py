@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from ..config import FRONTEND_DIR
+from ..core.config import FRONTEND_DIR
 
 router = APIRouter()
 

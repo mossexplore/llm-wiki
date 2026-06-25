@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from llm_wiki.knowledge import graph
 
-from ..response import success
+from ..core.response import success
 
 router = APIRouter()
 

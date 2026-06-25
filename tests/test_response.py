@@ -10,8 +10,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from llm_wiki.backend.error_codes import ErrorCode, raise_api_error
-from llm_wiki.backend.response import (
+from llm_wiki.backend.core.error_codes import ErrorCode, raise_api_error
+from llm_wiki.backend.core.response import (
     envelope,
     register_exception_handlers,
     set_request_id,

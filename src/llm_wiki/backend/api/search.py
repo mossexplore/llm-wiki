@@ -4,8 +4,8 @@ from fastapi import APIRouter
 
 from llm_wiki.knowledge import query
 
-from ..error_codes import ErrorCode, raise_api_error
-from ..response import success
+from ..core.error_codes import ErrorCode, raise_api_error
+from ..core.response import success
 from ..schemas import QueryReq
 
 router = APIRouter()

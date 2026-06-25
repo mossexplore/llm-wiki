@@ -9,9 +9,9 @@ from llm_wiki.common.markdown_case import read_doc as split_case
 from llm_wiki.common.markdown_case import section
 from llm_wiki.knowledge import ingest
 
-from ..config import CASES_DIR, ROOT
-from ..error_codes import ErrorCode, raise_api_error
-from ..response import success
+from ..core.config import CASES_DIR, ROOT
+from ..core.error_codes import ErrorCode, raise_api_error
+from ..core.response import success
 from ..schemas import KnowledgeUpdateReq
 from ..search_sync import index_case_file, index_remove
 

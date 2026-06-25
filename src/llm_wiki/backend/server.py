@@ -16,10 +16,10 @@ from llm_wiki import search_index
 from llm_wiki.common import storage_config
 
 from .api import chat, graph, ingest, knowledge, search, static_pages
-from .app_logging import LOG_DIR, logger
-from .config import FRONTEND_DIR, ROOT
-from .middleware import request_logging_middleware
-from .response import register_exception_handlers
+from .core.app_logging import LOG_DIR, logger
+from .core.config import FRONTEND_DIR, ROOT
+from .core.middleware import request_logging_middleware
+from .core.response import register_exception_handlers
 
 
 def build_search_index() -> None:

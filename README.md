@@ -260,7 +260,7 @@ sources:
 | `POST`   | `/api/chat/sessions/{id}/messages` | 发送提问，先检索后大模型兜底，NDJSON 流式返回回答。 |
 | `POST`   | `/api/chat/messages/{id}/feedback` | 对某条 Agent 回复点赞 / 点踩（点踩需带原因）。 |
 
-接口错误统一返回结构化 `{code, description}`（见 `src/llm_wiki/backend/error_codes.py`）；流式接口出错时只回通用提示与 `request_id`，原始异常仅进日志。
+接口错误统一返回结构化 `{code, description}`（见 `src/llm_wiki/backend/core/error_codes.py`）；流式接口出错时只回通用提示与 `request_id`，原始异常仅进日志。
 
 ## 项目结构
 
