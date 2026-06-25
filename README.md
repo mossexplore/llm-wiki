@@ -113,6 +113,7 @@ storage:
 - `chat.thinking` 控制对话模型是否启用 Think/Thinking 模式，默认 `true`；设为 `false` 时会向兼容网关传 `thinking.type=disabled`，通常可减少首字等待。
 - `storage.backend` 默认 `sqlite`：检索索引写到 `index/search.db`，对话数据写到 `db/chat.db`。改为 `mysql` 并填写 `storage.mysql` 后，两者都使用 MySQL（SQLAlchemy Core 管理连接池与事务，驱动 `mysql+pymysql`）。
 - 环境变量 `LOG_WIKI_STORAGE_BACKEND`、`LOG_WIKI_AUTO_REINDEX_ON_STARTUP`、`LOG_WIKI_MYSQL_*` 可覆盖同名配置。
+- `storage.auto_reindex_on_startup` 控制启动时是否从 `wiki/cases/` **整表删除并重建**检索索引(`t_cases`/`t_case_signatures`)。生产中若知识已直接写入数据库、不以 Markdown 文件为源,务必设为 `false`,否则会被文件内容覆盖(文件缺失时会清空索引)。设为 `false` 不影响精确命中:服务启动时仍会从库里现有的 `t_case_signatures` 读取并编译 Aho-Corasick 自动机(只读,不删不写)。
 
 > **不要提交真实 API key。** 公开仓库只提交 `config.example.yaml`，把 `config.yaml`、私有网关地址和密钥放在本地私有配置中（`config.yaml` 已被 `.gitignore` 忽略）。
 
