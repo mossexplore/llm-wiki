@@ -170,6 +170,10 @@ class ExactMatcher:
     def build(self) -> None:
         self._ac.build()
 
+    def __len__(self) -> int:
+        """AC 自动机里加载的 signature 总数(= t_case_signatures 行数),用于检索结果标识。"""
+        return sum(len(v) for v in self._index.values())
+
     def match(self, log: str) -> dict:
         """返回 {case_id: [命中的原文 signature, ...]}。"""
         matched: dict[str, list] = {}

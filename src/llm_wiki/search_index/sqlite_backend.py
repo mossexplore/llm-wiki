@@ -210,7 +210,16 @@ class SqliteSearch(SearchBackend):
                             "solution": solution or "(该案例无「解决方案」段落)",
                         }
                     )
-                return done(started, {"mode": "exact", "source": "sqlite", "hits": hits})
+                return done(
+                    started,
+                    {
+                        "mode": "exact",
+                        "source": "sqlite",
+                        "match_engine": "aho-corasick",
+                        "signatures_indexed": len(self._matcher),
+                        "hits": hits,
+                    },
+                )
 
             match_q = fts_query(log)
             if match_q:

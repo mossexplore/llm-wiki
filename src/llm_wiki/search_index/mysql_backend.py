@@ -216,7 +216,16 @@ class MySQLSearch(SearchBackend):
                             "solution": r["solution"] or "(该案例无「解决方案」段落)",
                         }
                     )
-                return done(started, {"mode": "exact", "source": "mysql", "hits": hits})
+                return done(
+                    started,
+                    {
+                        "mode": "exact",
+                        "source": "mysql",
+                        "match_engine": "aho-corasick",
+                        "signatures_indexed": len(self._matcher),
+                        "hits": hits,
+                    },
+                )
 
             query_text = mysql_query(log)
             if query_text:

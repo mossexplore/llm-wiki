@@ -115,7 +115,8 @@ def _search_files(log: str) -> dict:
                 }
             )
     if exact:
-        return _done({"mode": "exact", "hits": exact})
+        # 纯文件兜底:逐案例子串扫描,不是 AC(只有 DB 后端走 Aho-Corasick)
+        return _done({"mode": "exact", "match_engine": "file-scan", "hits": exact})
 
     # 2) 模糊召回:token 重合度
     log_tokens = tokenize(log)

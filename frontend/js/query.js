@@ -71,10 +71,14 @@
       const sourceLabels = { mysql: 'MySQL', sqlite: 'SQLite', files: '本地文件', none: '无来源', demo: '演示数据' };
       const sourceText = sourceLabels[r.source] || r.source || '未知来源';
       const sourceBadge = `<span class="badge mono" title="本次检索结果来源">${escapeHtml(sourceText)}</span>`;
+      const engineLabels = { 'aho-corasick': 'Aho-Corasick', 'file-scan': '文件扫描' };
+      const engineBadge = r.match_engine
+        ? `<span class="badge info mono" title="精确命中引擎:Aho-Corasick 在内存自动机里一次扫描日志命中全部 signature;文件扫描为无索引时的兜底">引擎 ${escapeHtml(engineLabels[r.match_engine] || r.match_engine)}${typeof r.signatures_indexed === 'number' ? ' · 索引 ' + r.signatures_indexed + ' signature' : ''}</span>`
+        : '';
       if (r.mode === 'exact') {
         return `
           <section class="card">
-            <div class="card-head"><div><div class="kicker">RESULT · EXACT MATCH</div><h3>精确命中 ${r.hits.length} 个案例</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${sourceBadge}${elapsedBadge}<span class="badge ok">${iconCheck()}EXACT</span></div></div>
+            <div class="card-head"><div><div class="kicker">RESULT · EXACT MATCH</div><h3>精确命中 ${r.hits.length} 个案例</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${sourceBadge}${engineBadge}${elapsedBadge}<span class="badge ok">${iconCheck()}EXACT</span></div></div>
             <div class="card-pad" style="display:grid;gap:12px">
               ${r.hits.map(h => `
                 <div class="result-block">
