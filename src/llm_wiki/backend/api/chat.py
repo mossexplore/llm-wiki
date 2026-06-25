@@ -24,12 +24,29 @@ FEEDBACK_INFO_TYPE_LABELS = {
     "incorrect_information": "信息/数据有误",
 }
 
+MESSAGE_FORMAT_ALIASES = {
+    "openai": "dict",
+    "dict": "dict",
+    "langchain": "tuple",
+    "tuple": "tuple",
+}
+
 
 def session_title(text: str) -> str:
     """用首条提问生成会话标题:取首行前 20 字。"""
     line = (text or "").strip().splitlines()[0] if (text or "").strip() else "新会话"
     line = line.strip() or "新会话"
     return line[:20] + ("…" if len(line) > 20 else "")
+
+
+def normalize_message_format(value: Optional[str]) -> str:
+    """归一化 chat message 结构:OpenAI=dict,LangChain=tuple。"""
+    key = (value or "openai").strip().lower()
+    message_format = MESSAGE_FORMAT_ALIASES.get(key)
+    if message_format:
+        return message_format
+    logger.warning("chat.send.invalid_message_format value=%s fallback=openai", value)
+    return "dict"
 
 
 def normalize_feedback(value: Optional[str]) -> Optional[str]:
@@ -120,6 +137,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
     user_id = (req.user_id or "").strip() or None
     if not chat_store.session_exists(session_id, user_id=user_id):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
+    message_format = normalize_message_format(req.message_format)
 
     has_messages = chat_store.has_messages(session_id)
     chat_store.add_message(session_id, "user", text, user_id=user_id)
@@ -131,7 +149,13 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 
     request_id = uuid.uuid4().hex[:12]
     started = time.perf_counter()
-    logger.info("chat.send.start session_id=%s request_id=%s len=%s", session_id, request_id, len(text))
+    logger.info(
+        "chat.send.start session_id=%s request_id=%s len=%s message_format=%s",
+        session_id,
+        request_id,
+        len(text),
+        message_format,
+    )
 
     def gen():
         acc = ""
@@ -170,16 +194,18 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     "mode": mode,
                     "refs": refs,
                     "retrieval_ms": retrieval_ms,
+                    "message_format": message_format,
                 }
             )
-            messages = agent.build_answer_messages(text, decision)
+            messages = agent.build_answer_messages_compatible(text, decision, message_format=message_format)
             prompt_stats = agent.message_stats(messages)
             logger.info(
                 f"chat.send.prompt session_id={session_id} request_id={request_id} "
+                f"message_format={message_format} "
                 f"message_count={prompt_stats['message_count']} char_count={prompt_stats['char_count']} "
                 f"message_lengths={prompt_stats['message_lengths']}"
             )
-            stream = agent.stream_messages(messages)
+            stream = agent.stream_messages_compatible(messages, message_format=message_format)
             model_request_start_ms = int((time.perf_counter() - started) * 1000)
             yield ndjson(
                 {
@@ -189,6 +215,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     "source": source,
                     "mode": mode,
                     "retrieval_ms": retrieval_ms,
+                    "message_format": message_format,
                     "message_count": prompt_stats["message_count"],
                     "prompt_chars": prompt_stats["char_count"],
                     "model_start_ms": model_request_start_ms,
@@ -212,6 +239,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                             "source": source,
                             "mode": mode,
                             "retrieval_ms": retrieval_ms,
+                            "message_format": message_format,
                             "model_start_ms": model_request_start_ms,
                             "model_wait_ms": model_wait_ms,
                             "first_delta_ms": first_delta_ms,
@@ -255,6 +283,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     "mode": mode,
                     "refs": refs,
                     "retrieval_ms": retrieval_ms,
+                    "message_format": message_format,
                     "model_start_ms": model_request_start_ms,
                     "model_wait_ms": model_wait_ms,
                     "first_delta_ms": first_delta_ms,

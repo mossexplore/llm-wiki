@@ -52,6 +52,7 @@ class SessionCreateReq(BaseModel):
 class ChatMessageReq(BaseModel):
     content: str
     user_id: Optional[str] = None
+    message_format: Optional[str] = None
 
 
 class FeedbackReasonReq(BaseModel):
