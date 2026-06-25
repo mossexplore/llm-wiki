@@ -15,7 +15,7 @@ from ..core.app_logging import logger
 from ..core.error_codes import ErrorCode, raise_api_error, stream_error_text
 from ..core.response import success
 from ..core.utils import ndjson
-from ..schemas import ChatMessageReq, FeedbackReq, SessionCreateReq
+from ..schemas import ChatMessageReq, FeedbackReq, SessionCreateReq, SessionScopeReq
 
 router = APIRouter()
 
@@ -94,17 +94,23 @@ def chat_create_session(req: SessionCreateReq):
     return success(chat_store.create_session(req.title or "新会话", user_id=user_id, source_code=source_code))
 
 
-@router.get("/api/chat/sessions")
-def chat_list_sessions(user_id: Optional[str] = None):
-    """列出会话;传入 user_id(查询参数)时只返回该用户的会话,不传则返回全部。"""
-    user_id = (user_id or "").strip() or None
+def _scope_user_id(req: Optional[SessionScopeReq]) -> Optional[str]:
+    """从可选请求体取出归一化后的 user_id(缺省/空白视为不限定用户)。"""
+    return ((req.user_id if req else None) or "").strip() or None
+
+
+# 部署环境强制 POST:原 GET/DELETE 端点统一改为 POST,user_id 从 query 改到请求体。
+@router.post("/api/chat/sessions/list")
+def chat_list_sessions(req: Optional[SessionScopeReq] = None):
+    """列出会话;请求体带 user_id 时只返回该用户的会话,不传则返回全部。"""
+    user_id = _scope_user_id(req)
     return success({"items": chat_store.list_sessions(user_id=user_id)})
 
 
-@router.delete("/api/chat/sessions")
-def chat_clear_sessions(user_id: Optional[str] = None):
-    """清空会话;传入 user_id(查询参数)时只清该用户的会话,不传则清空全部。"""
-    user_id = (user_id or "").strip() or None
+@router.post("/api/chat/sessions/clear")
+def chat_clear_sessions(req: Optional[SessionScopeReq] = None):
+    """清空会话;请求体带 user_id 时只清该用户的会话,不传则清空全部。"""
+    user_id = _scope_user_id(req)
     deleted = chat_store.clear_sessions(user_id=user_id)
     logger.info(
         f"chat.sessions.clear user_id={user_id or '*'} sessions={deleted['sessions']} "
@@ -113,19 +119,19 @@ def chat_clear_sessions(user_id: Optional[str] = None):
     return success({"ok": True, "deleted": deleted})
 
 
-@router.get("/api/chat/sessions/{session_id}/messages")
-def chat_get_messages(session_id: str, user_id: Optional[str] = None):
-    """读会话消息;传 user_id(查询参数)时要求会话归属该用户,否则按不存在处理。"""
-    user_id = (user_id or "").strip() or None
+@router.post("/api/chat/sessions/{session_id}/messages/list")
+def chat_get_messages(session_id: str, req: Optional[SessionScopeReq] = None):
+    """读会话消息;请求体带 user_id 时要求会话归属该用户,否则按不存在处理。"""
+    user_id = _scope_user_id(req)
     if not chat_store.session_exists(session_id, user_id=user_id):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
     return success({"items": chat_store.get_messages(session_id)})
 
 
-@router.delete("/api/chat/sessions/{session_id}")
-def chat_delete_session(session_id: str, user_id: Optional[str] = None):
-    """删会话;传 user_id(查询参数)时只删归属该用户的会话,否则按不存在处理。"""
-    user_id = (user_id or "").strip() or None
+@router.post("/api/chat/sessions/{session_id}/delete")
+def chat_delete_session(session_id: str, req: Optional[SessionScopeReq] = None):
+    """删会话;请求体带 user_id 时只删归属该用户的会话,否则按不存在处理。"""
+    user_id = _scope_user_id(req)
     ok = chat_store.delete_session(session_id, user_id=user_id)
     if not ok:
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)

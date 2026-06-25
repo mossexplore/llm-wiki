@@ -81,7 +81,10 @@
       state.chatSessionsLoading = true;
       render();
       try {
-        const r = await fetch('/api/chat/sessions');
+        const r = await fetch('/api/chat/sessions/list', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const data = apiData(await r.json());
         state.chatSessions = data.items || [];
@@ -131,7 +134,10 @@
       state.chatStreamStatus = null;
       render();
       try {
-        const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id) + '/messages');
+        const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id) + '/messages/list', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
         const payload = await r.json();
         if (!r.ok) throw new Error(apiErrorMessage(payload, '加载消息失败'));
         state.chatMessages = apiData(payload).items || [];
@@ -152,7 +158,10 @@
       });
       if (!ok) return;
       try {
-        const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id), { method: 'DELETE' });
+        const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id) + '/delete', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法删除'); return; }
         if (!r.ok) { const d = await r.json(); throw new Error(apiErrorMessage(d, '删除失败')); }
         state.chatSessions = state.chatSessions.filter(s => s.id !== id);
@@ -178,7 +187,10 @@
       if (!ok) return;
       try {
         stopChatLatencyTimer();
-        const r = await fetch('/api/chat/sessions', { method: 'DELETE' });
+        const r = await fetch('/api/chat/sessions/clear', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法清空'); return; }
         const payload = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(apiErrorMessage(payload, '清空失败'));

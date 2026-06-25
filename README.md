@@ -254,9 +254,10 @@ sources:
 | `GET`    | `/api/kb/stats`                | 返回案例数、草稿数、signature 数和更新时间。    |
 | `GET`    | `/api/examples/ingest`         | 返回一条示例原始记录和示例结构化案例。          |
 | `POST`   | `/api/chat/sessions`           | 新建对话会话。                                  |
-| `GET`    | `/api/chat/sessions`           | 列出全部会话（按最近活跃排序）。                |
-| `GET`    | `/api/chat/sessions/{id}/messages` | 获取某会话的全部消息（含反馈）。            |
-| `DELETE` | `/api/chat/sessions/{id}`      | 删除会话及其消息、反馈。                        |
+| `POST`   | `/api/chat/sessions/list`      | 列出全部会话（按最近活跃排序）。                |
+| `POST`   | `/api/chat/sessions/{id}/messages/list` | 获取某会话的全部消息（含反馈）。       |
+| `POST`   | `/api/chat/sessions/{id}/delete` | 删除会话及其消息、反馈。                      |
+| `POST`   | `/api/chat/sessions/clear`     | 清空全部会话（可按 `user_id` 限定）。           |
 | `POST`   | `/api/chat/sessions/{id}/messages` | 发送提问，先检索后大模型兜底，NDJSON 流式返回回答。 |
 | `POST`   | `/api/chat/messages/{id}/feedback` | 对某条 Agent 回复点赞 / 点踩（点踩需带原因）。 |
 
