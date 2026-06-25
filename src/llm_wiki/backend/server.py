@@ -36,6 +36,9 @@ def build_search_index() -> None:
                 f"search_index.reindex_all built={n} backend={type(backend).__name__} "
                 f"db={backend.label()}"
             )
+            # 启动时把 signature 从库里加载并编译成 Aho-Corasick 自动机,精确命中走内存匹配
+            backend.warm_exact_index()
+            logger.info("search_index.exact_index_warmed backend=%s", type(backend).__name__)
         else:
             logger.warning("FTS5 不可用,检索将回退到文件扫描(功能正常,速度较慢)。")
     except Exception:

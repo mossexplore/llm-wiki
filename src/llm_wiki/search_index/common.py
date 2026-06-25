@@ -13,6 +13,8 @@ import time
 from llm_wiki.common.markdown_case import annotate, section, split_frontmatter
 from llm_wiki.common.paths import ROOT
 
+from .aho_corasick import Automaton
+
 __all__ = [
     "CASES_DIR",
     "DB_PATH",
@@ -28,6 +30,8 @@ __all__ = [
     "EXACT_SIGNATURE_MIN_LEN",
     "iter_search_tokens",
     "is_cjk",
+    "ExactMatcher",
+    "order_exact_case_ids",
 ]
 
 # 检索分词:英文词(>=3 字母)、数字错误码(>=3 位)、连续中文。两个后端共用,
@@ -101,6 +105,10 @@ class SearchBackend:
     def label(self) -> str:
         raise NotImplementedError
 
+    def warm_exact_index(self) -> None:
+        """预热精确命中索引(AC 自动机);默认空实现,启动时由 server 调用。"""
+        return None
+
 
 def case_from_file(path: pathlib.Path) -> dict | None:
     """解析单个 wiki/cases/*.md 为规范化案例字典;非案例文件返回 None。"""
@@ -137,3 +145,57 @@ def case_from_file(path: pathlib.Path) -> dict | None:
 def done(started, payload: dict) -> dict:
     payload["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
     return payload
+
+
+class ExactMatcher:
+    """signature 精确命中匹配器:小写建 AC 自动机,命中后展开回 (case_id, 原文 signature)。
+
+    与原先 `LOCATE/instr(signature, log)` 逐条扫描语义一致(忽略大小写的子串命中),
+    但匹配耗时与 signature 数量基本无关。t_case_signatures 已按长度门控,这里直接继承。
+    两个后端(SQLite / MySQL)共用本类,差别只在「从各自的表里把 (case_id, signature) 读出来」。
+    """
+
+    def __init__(self) -> None:
+        self._ac = Automaton()
+        self._index: dict[str, list] = {}  # signature 小写 -> [(case_id, 原文 signature)]
+
+    def add(self, case_id: str, signature: str) -> None:
+        sig = str(signature)
+        key = sig.lower()
+        if key not in self._index:
+            self._ac.add(key)
+            self._index[key] = []
+        self._index[key].append((case_id, sig))
+
+    def build(self) -> None:
+        self._ac.build()
+
+    def match(self, log: str) -> dict:
+        """返回 {case_id: [命中的原文 signature, ...]}。"""
+        matched: dict[str, list] = {}
+        for key in self._ac.iter_matches(log.lower()):
+            for cid, sig in self._index.get(key, ()):
+                matched.setdefault(cid, []).append(sig)
+        return matched
+
+    @classmethod
+    def from_rows(cls, rows) -> ExactMatcher:
+        """rows: 可迭代的 (case_id, signature);构建并定型自动机。"""
+        m = cls()
+        for case_id, signature in rows:
+            if case_id and signature:
+                m.add(case_id, signature)
+        m.build()
+        return m
+
+
+def order_exact_case_ids(matched: dict, limit: int) -> list:
+    """精确命中按相关性排序并截断:命中 signature 数 > 最长 signature 长度 > case_id。
+
+    否则一条通用 signature 命中多案例时会无序、无界返回,破坏 search(log, limit) 契约。
+    """
+    return sorted(
+        matched.items(),
+        key=lambda kv: (len(kv[1]), max(len(s) for s in kv[1]), kv[0]),
+        reverse=True,
+    )[:limit]

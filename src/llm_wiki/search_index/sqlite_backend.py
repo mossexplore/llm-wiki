@@ -11,6 +11,7 @@ from .common import (
     CASES_DIR,
     DB_PATH,
     SCHEMA_PATH,
+    ExactMatcher,
     SearchBackend,
     annotate,
     case_from_file,
@@ -18,6 +19,7 @@ from .common import (
     exact_signatures,
     is_cjk,
     iter_search_tokens,
+    order_exact_case_ids,
 )
 
 
@@ -25,6 +27,8 @@ class SqliteSearch(SearchBackend):
     def __init__(self, db_path: pathlib.Path = DB_PATH):
         self.db_path = pathlib.Path(db_path)
         self._ok = None
+        self._matcher: ExactMatcher | None = None  # 精确命中 AC 自动机
+        self._matcher_dirty = True                 # 索引变更后置位,下次 search 惰性重建
 
     def _connect(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +106,7 @@ class SqliteSearch(SearchBackend):
         try:
             self._upsert(conn, case)
             conn.commit()
+            self._matcher_dirty = True
         finally:
             conn.close()
 
@@ -116,6 +121,7 @@ class SqliteSearch(SearchBackend):
                 conn.execute("DELETE FROM t_cases WHERE rowid=?", (row[0],))
                 conn.execute("DELETE FROM t_case_signatures WHERE case_id=?", (case_id,))
                 conn.commit()
+                self._matcher_dirty = True
         finally:
             conn.close()
 
@@ -135,7 +141,25 @@ class SqliteSearch(SearchBackend):
                     self._upsert(conn, case)
                     n += 1
             conn.commit()
+            self._matcher_dirty = True
             return n
+        finally:
+            conn.close()
+
+    def _ensure_matcher(self, conn: sqlite3.Connection) -> ExactMatcher:
+        """惰性构建精确命中 AC 自动机;索引未变则复用,变更后(dirty)从表整体重建。"""
+        if self._matcher is None or self._matcher_dirty:
+            rows = conn.execute("SELECT case_id, signature FROM t_case_signatures").fetchall()
+            self._matcher = ExactMatcher.from_rows(rows)
+            self._matcher_dirty = False
+        return self._matcher
+
+    def warm_exact_index(self) -> None:
+        if not self.available():
+            return
+        conn = self._connect()
+        try:
+            self._ensure_matcher(conn)
         finally:
             conn.close()
 
@@ -163,18 +187,12 @@ class SqliteSearch(SearchBackend):
         log_low = log.lower()
         conn = self._connect()
         try:
-            # 子串判断下推到 SQLite(instr),不再把整张 signature 表搬进 Python。
-            # 两侧都小写以保持与历史一致的「忽略大小写」精确命中(ASCII 折叠为主)。
-            sig_rows = conn.execute(
-                "SELECT case_id, signature FROM t_case_signatures WHERE instr(?, lower(signature)) > 0",
-                (log_low,),
-            ).fetchall()
-            matched: dict[str, list] = {}
-            for cid, sig in sig_rows:
-                matched.setdefault(cid, []).append(sig)
+            # 精确命中走 Aho-Corasick:日志扫一遍 AC 自动机即得全部命中的 signature,
+            # 耗时与 signature 数量基本无关(取代原先 instr 逐条扫描)。忽略大小写由 AC 小写建模实现。
+            matched = self._ensure_matcher(conn).match(log_low)
             if matched:
                 hits = []
-                for cid, sigs in matched.items():
+                for cid, sigs in order_exact_case_ids(matched, limit):
                     r = conn.execute(
                         "SELECT title, file, status, confidence, solution FROM t_cases WHERE id=?", (cid,)
                     ).fetchone()

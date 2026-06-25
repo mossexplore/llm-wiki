@@ -15,6 +15,7 @@ from llm_wiki.common.mysql_client import (
 from .common import (
     CASES_DIR,
     MYSQL_SCHEMA_PATH,
+    ExactMatcher,
     SearchBackend,
     annotate,
     case_from_file,
@@ -23,6 +24,7 @@ from .common import (
     is_cjk,
     iter_search_tokens,
     logger,
+    order_exact_case_ids,
 )
 
 
@@ -30,6 +32,8 @@ class MySQLSearch(SearchBackend):
     def __init__(self):
         self._ok = None
         self._built = False
+        self._matcher: ExactMatcher | None = None  # 精确命中 AC 自动机
+        self._matcher_dirty = True                 # 索引变更后置位,下次 search 惰性重建
 
     def label(self) -> str:
         return get_mysql_label()
@@ -105,6 +109,7 @@ class MySQLSearch(SearchBackend):
             return
         with get_mysql_client().begin() as conn:
             self._upsert(conn, case)
+        self._matcher_dirty = True
 
     def remove_case(self, case_id: str) -> None:
         if not self.available():
@@ -114,6 +119,7 @@ class MySQLSearch(SearchBackend):
                 _sql_text("DELETE FROM t_case_signatures WHERE case_id=:case_id"), {"case_id": case_id}
             )
             conn.execute(_sql_text("DELETE FROM t_cases WHERE id=:case_id"), {"case_id": case_id})
+        self._matcher_dirty = True
 
     def reindex_all(self) -> int:
         if not self.available():
@@ -127,7 +133,24 @@ class MySQLSearch(SearchBackend):
                 if case:
                     self._upsert(conn, case)
                     n += 1
-            return n
+        self._matcher_dirty = True
+        return n
+
+    def _ensure_matcher(self, conn) -> ExactMatcher:
+        """惰性构建精确命中 AC 自动机;索引未变则复用,变更后(dirty)从 MySQL 表整体重建。"""
+        if self._matcher is None or self._matcher_dirty:
+            rows = conn.execute(
+                _sql_text("SELECT case_id, signature FROM t_case_signatures")
+            ).mappings().all()
+            self._matcher = ExactMatcher.from_rows((r["case_id"], r["signature"]) for r in rows)
+            self._matcher_dirty = False
+        return self._matcher
+
+    def warm_exact_index(self) -> None:
+        if not self.available():
+            return
+        with get_mysql_client().begin() as conn:
+            self._ensure_matcher(conn)
 
     def ensure_built(self) -> None:
         # 进程内只做一次空库自检:首次确认非空(或自动重建)后置位 _built,
@@ -163,32 +186,12 @@ class MySQLSearch(SearchBackend):
         self.ensure_built()
         log_low = log.lower()
         with get_mysql_client().begin() as conn:
-            # 子串判断下推到 MySQL(LOCATE),避免每次查询把整张 signature 表拉回应用层。
-            sig_rows = (
-                conn.execute(
-                    _sql_text(
-                        "SELECT case_id, signature FROM t_case_signatures "
-                        "WHERE LOCATE(LOWER(signature), :log) > 0"
-                    ),
-                    {"log": log_low},
-                )
-                .mappings()
-                .all()
-            )
-            matched: dict[str, list] = {}
-            for row in sig_rows:
-                matched.setdefault(row["case_id"], []).append(row["signature"])
+            # 精确命中走 Aho-Corasick:从 t_case_signatures 建好的 AC 自动机里,日志扫一遍即得
+            # 全部命中的 signature,耗时与 signature 数量基本无关(取代原先 LOCATE 全表扫描)。
+            matched = self._ensure_matcher(conn).match(log_low)
             if matched:
-                # 精确命中按相关性排序并截断到 limit:命中 signature 数 > 最长 signature 长度
-                # > case_id(确定性兜底)。否则一条通用 signature 命中多案例时会无序、无界返回,
-                # 破坏 search(log, limit) 契约。
-                ordered = sorted(
-                    matched.items(),
-                    key=lambda kv: (len(kv[1]), max(len(s) for s in kv[1]), kv[0]),
-                    reverse=True,
-                )[:limit]
                 hits = []
-                for cid, sigs in ordered:
+                for cid, sigs in order_exact_case_ids(matched, limit):
                     r = (
                         conn.execute(
                             _sql_text(
