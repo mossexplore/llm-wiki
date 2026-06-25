@@ -29,7 +29,7 @@ wiki/cases/*.md  ──(回灌/同步)──▶  SQLite/MySQL 索引  ──(检
 | 表 | 作用 |
 | --- | --- |
 | `t_cases` | 一行一个案例(派生自一个 `wiki/cases/*.md`)。`rowid` 与 FTS 表对齐,`id` 是 slug(= 文件名主干)。 |
-| `t_case_signatures` | 精确命中专用,一条 signature 一行;应用层判断"signature 是否作为子串出现在用户日志里"。 |
+| `t_case_signatures` | 精确命中专用,一条 signature 一行;应用层判断"signature 是否作为子串出现在用户日志里"。两端对齐:主键 `id` 为 UUID(应用层 uuid4, MySQL `CHAR(64)`)、`created_at` 入库时间(DB 默认值填充)、`UNIQUE(case_id, signature)` 去重、外键 `case_id -> t_cases.id ON DELETE CASCADE`(SQLite 需 `PRAGMA foreign_keys=ON`,后端已开)。MySQL 额外把 `signature` 列钉 `utf8mb4_bin`。 |
 | `t_cases_fts` | FTS5 虚拟表,模糊召回用;`rowid` 与 `t_cases.rowid` 一一对应,`bm25()` 排序。 |
 
 字段明细见 [schema.sqlite.sql](schema.sqlite.sql) 与 [schema.mysql.sql](schema.mysql.sql) 注释。

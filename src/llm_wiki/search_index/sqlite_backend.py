@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pathlib
 import sqlite3
+import uuid
 
 from .common import (
     CASES_DIR,
@@ -28,6 +29,9 @@ class SqliteSearch(SearchBackend):
     def _connect(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
+        # SQLite 默认不强制外键, 必须每个连接显式开启, t_case_signatures 的
+        # ON DELETE CASCADE 才会生效。须在 executescript(隐式事务)之前设置。
+        conn.execute("PRAGMA foreign_keys = ON")
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         return conn
 
@@ -85,7 +89,11 @@ class SqliteSearch(SearchBackend):
             (rid, case.get("title", ""), "\n".join(sigs), "\n".join(comps), body),
         )
         for s in exact_signatures(sigs):
-            conn.execute("INSERT INTO t_case_signatures(case_id, signature) VALUES(?,?)", (cid, s))
+            # INSERT OR IGNORE: 由 UNIQUE(case_id, signature) 兜底去重。
+            conn.execute(
+                "INSERT OR IGNORE INTO t_case_signatures(id, case_id, signature) VALUES(?,?,?)",
+                (str(uuid.uuid4()), cid, s),
+            )
 
     def index_case(self, case: dict) -> None:
         if not self.available() or not case or not case.get("id"):

@@ -37,12 +37,20 @@ CREATE TABLE IF NOT EXISTS t_cases (
 -- t_case_signatures：精确命中专用，一条 signature 一行。
 -- 检索时把全部 signature 拉到应用层，判断「某条 signature 是否作为子串出现在用户日志里」。
 -- 这是知识库的「检索命门」：signature 必须原文照搬，精确命中优先级最高、且是无命中门控的依据。
+-- 设计与 MySQL 版对齐：
+--   - 显式主键 id（TEXT，UUID，应用层 uuid4 生成），不依赖隐式 rowid；
+--   - UNIQUE(case_id, signature) 去重，避免同一命中被重复计数（兼作 case_id 索引）；
+--   - 外键 case_id -> t_cases.id ON DELETE CASCADE，删案例时连带清理，杜绝孤儿行。
+--     注意：SQLite 默认不强制外键，需每个连接 `PRAGMA foreign_keys = ON`（后端已设置）。
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS t_case_signatures (
+  id         TEXT PRIMARY KEY,                -- 行主键, 应用层 uuid4 生成
   case_id    TEXT NOT NULL,                   -- 关联 t_cases.id
-  signature  TEXT NOT NULL                    -- 用于精确命中的原始错误特征文本
+  signature  TEXT NOT NULL,                   -- 用于精确命中的原始错误特征文本
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),  -- 入库时间(UTC), 由 DB 默认值填充, 调试/审计用
+  UNIQUE(case_id, signature),
+  FOREIGN KEY (case_id) REFERENCES t_cases(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_case_signatures_case ON t_case_signatures(case_id);
 
 -- ---------------------------------------------------------------------------
 -- t_cases_fts：全文检索（模糊召回），FTS5 + trigram 分词器。

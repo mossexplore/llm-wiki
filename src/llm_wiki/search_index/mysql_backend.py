@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from llm_wiki.common.mysql_client import (
     _sql_text,
     get_mysql_client,
@@ -88,8 +90,13 @@ class MySQLSearch(SearchBackend):
         )
         for s in exact_signatures(sigs):
             conn.execute(
-                _sql_text("INSERT INTO t_case_signatures(case_id, signature) VALUES(:case_id,:signature)"),
-                {"case_id": cid, "signature": s},
+                # INSERT IGNORE: UNIQUE(case_id, signature(255)) 兜底去重,
+                # 避免极端情况下(同案例两条 signature 共享前 255 字符)整次索引报错中断。
+                _sql_text(
+                    "INSERT IGNORE INTO t_case_signatures(id, case_id, signature) "
+                    "VALUES(:id,:case_id,:signature)"
+                ),
+                {"id": str(uuid.uuid4()), "case_id": cid, "signature": s},
             )
 
     def index_case(self, case: dict) -> None:
