@@ -123,12 +123,17 @@
             ${rows.map(r => {
               const miss = !r.hit_at_k;
               const rankText = r.rank > 0 ? ('#' + r.rank) : '✗';
-              const expectedHint = miss ? ` <span class="mono muted" style="font-size:11px">→ 期望 ${escapeHtml(r.expected)}</span>` : '';
+              const hint = miss ? `<div class="eval-row-hint mono">→ 期望 ${escapeHtml(r.expected)}</div>` : '';
               return `<div class="eval-row${miss ? ' miss' : ''}">
-                <span class="eval-row-q">${escapeHtml(r.query)}${expectedHint}</span>
-                <span class="badge mono eval-kind-${r.kind}">${r.kind}</span>
-                <span class="badge ${EVAL_MODE_CLASS[r.mode] || ''} mono">${r.mode}</span>
-                <span class="mono eval-rank${miss ? ' miss' : ''}">${rankText}</span>
+                <div class="eval-row-main">
+                  <div class="eval-row-q">${escapeHtml(r.query)}</div>
+                  ${hint}
+                </div>
+                <div class="eval-row-meta">
+                  <span class="badge mono eval-kind-${r.kind}">${r.kind}</span>
+                  <span class="badge ${EVAL_MODE_CLASS[r.mode] || ''} mono">${r.mode}</span>
+                  <span class="mono eval-rank${miss ? ' miss' : ''}">${rankText}</span>
+                </div>
               </div>`;
             }).join('')}
           </div>
