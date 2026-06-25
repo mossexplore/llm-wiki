@@ -181,7 +181,7 @@ class MySQLSearch(SearchBackend):
                             "solution": r["solution"] or "(该案例无「解决方案」段落)",
                         }
                     )
-                return done(started, {"mode": "exact", "hits": hits})
+                return done(started, {"mode": "exact", "source": "mysql", "hits": hits})
 
             query_text = mysql_query(log)
             if query_text:
@@ -209,8 +209,8 @@ class MySQLSearch(SearchBackend):
                         }
                         for r in rows
                     ]
-                    return done(started, {"mode": "fuzzy", "hits": hits})
-            return done(started, {"mode": "none", "hits": []})
+                    return done(started, {"mode": "fuzzy", "source": "mysql", "hits": hits})
+            return done(started, {"mode": "none", "source": "mysql", "hits": []})
 
     def stats(self) -> dict:
         if not self.available():

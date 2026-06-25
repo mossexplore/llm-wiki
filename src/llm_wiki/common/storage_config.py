@@ -50,6 +50,20 @@ def auto_reindex_on_startup() -> bool:
     return _as_bool(value, True)
 
 
+def local_search() -> bool:
+    """返回检索时是否允许扫描本地 wiki/cases/*.md;缺省为 true。
+
+    true(默认):数据库索引后端不可用时,回退到本地 Markdown 文件扫描。
+    false:只从数据库索引检索;后端不可用时直接判定无命中,绝不读本地文件。
+    """
+    data = _config_data()
+    storage = data.get("storage") or {}
+    value = os.environ.get("LOG_WIKI_LOCAL_SEARCH")
+    if value in (None, ""):
+        value = storage.get("local_search")
+    return _as_bool(value, True)
+
+
 def mysql_config() -> dict:
     """读取 MySQL 连接配置;仅在 storage.backend=mysql 时需要完整填写。"""
     data = _config_data()

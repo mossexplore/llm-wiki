@@ -20,6 +20,7 @@ import sys
 import time
 
 from llm_wiki import search_index
+from llm_wiki.common import storage_config
 from llm_wiki.common.markdown_case import annotate, read_doc, section
 from llm_wiki.common.paths import ROOT
 
@@ -63,16 +64,25 @@ def tokenize(s: str):
 def search(log: str) -> dict:
     """检索核心:返回结构化结果,供 CLI 与 web 后端共用。
 
-    返回 {"mode": "exact"|"fuzzy"|"none", "hits": [...], "elapsed_ms": int}。
+    返回 {
+      "mode": "exact"|"fuzzy"|"none",
+      "source": "mysql"|"sqlite"|"files"|"none",
+      "hits": [...],
+      "elapsed_ms": int,
+    }。
     mode=exact 时 hits 含 solution;mode=fuzzy 时仅候选(需人工判断)。
     elapsed_ms 为本次检索的纯后端耗时(不含网络/序列化),单位毫秒。
 
     优先走 search_index 当前配置的后端(SQLite 或 MySQL);索引不可用时自动回退到
     下面的纯文件扫描,保证默认 SQLite 场景仍可零外部数据库运行。
+
+    storage.local_search=false 时关闭文件兜底:只认数据库索引结果,后端不可用即判无命中。
     """
     res = search_index.backend.search(log)
     if res is not None:
         return res
+    if not storage_config.local_search():
+        return {"mode": "none", "source": "none", "hits": [], "elapsed_ms": 0}
     return _search_files(log)
 
 
@@ -82,6 +92,7 @@ def _search_files(log: str) -> dict:
     started = time.perf_counter()
 
     def _done(payload: dict) -> dict:
+        payload["source"] = "files"
         payload["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
         return payload
 

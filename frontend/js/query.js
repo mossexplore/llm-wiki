@@ -37,12 +37,12 @@
       const log = state.logText.toLowerCase();
       let base;
       if (log.includes('hikari') || log.includes('connection is not available')) {
-        base = { mode: 'exact', hits: [{ title: SAMPLE_CASE_FALLBACK.title, status: 'verified', file: 'wiki/cases/hikari-pool-exhausted.md', matched: ['HikariPool-1 - Connection is not available'], solution: SAMPLE_CASE_FALLBACK.solution }] };
+        base = { mode: 'exact', source: 'demo', hits: [{ title: SAMPLE_CASE_FALLBACK.title, status: 'verified', file: 'wiki/cases/hikari-pool-exhausted.md', matched: ['HikariPool-1 - Connection is not available'], solution: SAMPLE_CASE_FALLBACK.solution }] };
       } else if (log.includes('oom') || log.includes('outofmemory') || log.includes('timeout') || log.includes('timed out')) {
         // 无后端时的占位演示数据;score 模拟后端的 BM25 相关度(真实检索为实时计算)
-        base = { mode: 'fuzzy', hits: [{ title: 'JVM Metaspace OOM', score: 0.42, file: 'wiki/cases/jvm-metaspace-oom.md' }, { title: 'Kafka 消费组 Rebalance 风暴', score: 0.31, file: 'wiki/cases/kafka-rebalance.md' }] };
+        base = { mode: 'fuzzy', source: 'demo', hits: [{ title: 'JVM Metaspace OOM', score: 0.42, file: 'wiki/cases/jvm-metaspace-oom.md' }, { title: 'Kafka 消费组 Rebalance 风暴', score: 0.31, file: 'wiki/cases/kafka-rebalance.md' }] };
       } else {
-        base = { mode: 'none', hits: [] };
+        base = { mode: 'none', source: 'demo', hits: [] };
       }
       state.result = withElapsed(base, t0);
       state.querying = false;
@@ -68,10 +68,13 @@
       const elapsedBadge = elapsed != null
         ? `<span class="badge info mono">${elapsed} ms</span>`
         : '';
+      const sourceLabels = { mysql: 'MySQL', sqlite: 'SQLite', files: '本地文件', none: '无来源', demo: '演示数据' };
+      const sourceText = sourceLabels[r.source] || r.source || '未知来源';
+      const sourceBadge = `<span class="badge mono" title="本次检索结果来源">${escapeHtml(sourceText)}</span>`;
       if (r.mode === 'exact') {
         return `
           <section class="card">
-            <div class="card-head"><div><div class="kicker">RESULT · EXACT MATCH</div><h3>精确命中 ${r.hits.length} 个案例</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${elapsedBadge}<span class="badge ok">${iconCheck()}EXACT</span></div></div>
+            <div class="card-head"><div><div class="kicker">RESULT · EXACT MATCH</div><h3>精确命中 ${r.hits.length} 个案例</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${sourceBadge}${elapsedBadge}<span class="badge ok">${iconCheck()}EXACT</span></div></div>
             <div class="card-pad" style="display:grid;gap:12px">
               ${r.hits.map(h => `
                 <div class="result-block">
@@ -90,7 +93,7 @@
       if (r.mode === 'fuzzy') {
         return `
           <section class="card">
-            <div class="card-head"><div><div class="kicker">RESULT · POSSIBLY RELATED</div><h3>未精确命中 · 以下可能相关</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${elapsedBadge}<span class="badge warn">需人工判断</span></div></div>
+            <div class="card-head"><div><div class="kicker">RESULT · POSSIBLY RELATED</div><h3>未精确命中 · 以下可能相关</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${sourceBadge}${elapsedBadge}<span class="badge warn">需人工判断</span></div></div>
             <div class="card-pad" style="display:grid;gap:10px">
               <p class="muted" style="margin:0 0 2px;font-size:12px">按 BM25 相关度排序(相对排序分,非置信度),仅供参考,勿直接照搬其方案。</p>
               ${r.hits.map(h => `
@@ -103,7 +106,7 @@
       }
       return `
         <section class="card">
-          <div class="card-head"><div><div class="kicker">RESULT · NO MATCH</div><h3>知识库中暂无相关案例</h3></div>${elapsedBadge}</div>
+          <div class="card-head"><div><div class="kicker">RESULT · NO MATCH</div><h3>知识库中暂无相关案例</h3></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${sourceBadge}${elapsedBadge}</div></div>
           <div class="card-pad">
             <div class="empty">
               ${iconInfo()}

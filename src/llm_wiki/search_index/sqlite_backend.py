@@ -184,7 +184,7 @@ class SqliteSearch(SearchBackend):
                             "solution": solution or "(该案例无「解决方案」段落)",
                         }
                     )
-                return done(started, {"mode": "exact", "hits": hits})
+                return done(started, {"mode": "exact", "source": "sqlite", "hits": hits})
 
             match_q = fts_query(log)
             if match_q:
@@ -208,9 +208,9 @@ class SqliteSearch(SearchBackend):
                         }
                         for (t, f, s, score) in rows
                     ]
-                    return done(started, {"mode": "fuzzy", "hits": hits})
+                    return done(started, {"mode": "fuzzy", "source": "sqlite", "hits": hits})
 
-            return done(started, {"mode": "none", "hits": []})
+            return done(started, {"mode": "none", "source": "sqlite", "hits": []})
         finally:
             conn.close()
 

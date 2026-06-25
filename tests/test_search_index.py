@@ -48,6 +48,7 @@ def test_exact_hit_returns_solution(backend):
     log = f"线上日志:{HIKARI_SIGNATURE} after 30007ms"
     res = backend.search(log)
     assert res["mode"] == "exact"
+    assert res["source"] == "sqlite"
     assert res["hits"][0]["file"] == "wiki/cases/hikari.md"
     assert "maximumPoolSize" in res["hits"][0]["solution"]
 
@@ -63,6 +64,7 @@ def test_fuzzy_hit_when_signature_not_substring(backend):
     # 不含完整 signature 原文,只共享正文里的 token → 走模糊召回
     res = backend.search("maximumPoolSize 应该配置多大比较合理")
     assert res["mode"] == "fuzzy"
+    assert res["source"] == "sqlite"
     assert res["hits"][0]["file"] == "wiki/cases/hikari.md"
 
 
@@ -70,6 +72,7 @@ def test_none_when_unrelated(backend):
     backend.index_case(_case())
     res = backend.search("完全不相关的内容 xyzqwerty")
     assert res["mode"] == "none"
+    assert res["source"] == "sqlite"
     assert res["hits"] == []
 
 
