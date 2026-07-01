@@ -249,6 +249,34 @@ class SqliteSearch(SearchBackend):
         finally:
             conn.close()
 
+    def get_contexts(self, files: list[str]) -> list[dict]:
+        """从 SQLite 索引表读取 RAG 上下文正文;不回退读取本地 Markdown。"""
+        files = list(dict.fromkeys(f for f in files if f))
+        if not files or not self.available():
+            return []
+        placeholders = ",".join("?" for _ in files)
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                f"""SELECT title, file, background, diagnosis, solution
+                    FROM t_cases
+                    WHERE file IN ({placeholders})""",
+                files,
+            ).fetchall()
+        finally:
+            conn.close()
+        by_file = {
+            file: {
+                "title": title or file,
+                "file": file,
+                "background": background or "",
+                "diagnosis": diagnosis or "",
+                "solution": solution or "",
+            }
+            for title, file, background, diagnosis, solution in rows
+        }
+        return [by_file[file] for file in files if file in by_file]
+
     def stats(self) -> dict:
         if not self.available():
             return {"backend": "sqlite", "available": False, "db": str(self.db_path)}

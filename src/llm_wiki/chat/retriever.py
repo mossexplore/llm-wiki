@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-retriever.py — 对话的检索接口与本地 wiki 实现。
+retriever.py — 对话的检索接口与 wiki 知识库实现。
 
 把「这一轮要不要带知识库资料、带哪些」从对话编排(agent.py)里拆出来,做成可注入接口:
   - Retriever        协议:retrieve(text) -> decision 决策字典。
-  - WikiRetriever    默认实现:走 query.search() 召回 wiki/cases/ 案例,按命中门控决定注入资料。
+  - WikiRetriever    默认实现:走 query.search() 召回案例,从数据库索引表读取正文并注入资料。
   - NullRetriever    纯对话:永远不检索,直接交给大模型作答(只想要对话功能时用它)。
 
 decision 字典结构(agent.build_answer_messages_* 消费):
@@ -23,10 +23,6 @@ import logging
 import os
 from typing import Protocol
 
-from llm_wiki.common.markdown_case import read_doc, section
-from llm_wiki.common.paths import ROOT
-
-CASES_DIR = ROOT / "wiki" / "cases"
 logger = logging.getLogger("log_wiki.retriever")
 
 # 模糊命中判定为「关联度大」的最低分(bm25 取负后,越大越相关)。可用环境变量覆盖。
@@ -52,25 +48,7 @@ class NullRetriever:
 
 
 class WikiRetriever:
-    """本地知识库检索:精确命中或关联度足够的模糊命中时注入案例资料(RAG)。"""
-
-    def _case_context(self, file_rel: str) -> dict | None:
-        """读 wiki/cases/<file>,取标题与各正文段落,作为 RAG 上下文。"""
-        path = (ROOT / file_rel).resolve()
-        try:
-            path.relative_to(CASES_DIR.resolve())
-        except ValueError:
-            return None
-        if not path.exists():
-            return None
-        fm, body = read_doc(path)
-        return {
-            "title": fm.get("title") or path.stem,
-            "file": file_rel,
-            "background": section(body, "问题背景"),
-            "diagnosis": section(body, "定位过程"),
-            "solution": section(body, "解决方案"),
-        }
+    """知识库检索:精确命中或关联度足够的模糊命中时注入数据库中的案例资料(RAG)。"""
 
     def retrieve(self, text: str) -> dict:
         # 惰性导入:只在真正检索时才拉起 query/search_index,纯对话(NullRetriever)不受牵连。
@@ -93,7 +71,7 @@ class WikiRetriever:
                     picked_files.append({"file": h["file"], "title": h.get("title", "")})
 
         if picked_files:
-            context = [c for c in (self._case_context(p["file"]) for p in picked_files) if c]
+            context = query.get_contexts([p["file"] for p in picked_files])
             if context:
                 refs = [{"file": c["file"], "title": c["title"]} for c in context]
                 return {

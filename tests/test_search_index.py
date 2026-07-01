@@ -68,6 +68,22 @@ def test_fuzzy_hit_when_signature_not_substring(backend):
     assert res["hits"][0]["file"] == "wiki/cases/hikari.md"
 
 
+def test_get_contexts_reads_case_body_from_index_table(backend):
+    backend.index_case(_case())
+
+    contexts = backend.get_contexts(["wiki/cases/missing.md", "wiki/cases/hikari.md"])
+
+    assert contexts == [
+        {
+            "title": "HikariPool 连接池耗尽",
+            "file": "wiki/cases/hikari.md",
+            "background": "大促高峰连接池耗尽",
+            "diagnosis": "慢查询长时间占满连接",
+            "solution": "为慢查询加复合索引并调大 maximumPoolSize",
+        }
+    ]
+
+
 def test_none_when_unrelated(backend):
     backend.index_case(_case())
     res = backend.search("完全不相关的内容 xyzqwerty")

@@ -181,6 +181,38 @@ class MySQLSearch(SearchBackend):
             logger.exception("search_index mysql query failed, fallback to file scan")
             return None
 
+    def get_contexts(self, files: list[str]) -> list[dict]:
+        """从 MySQL 索引表读取 RAG 上下文正文;不回退读取本地 Markdown。"""
+        files = list(dict.fromkeys(f for f in files if f))
+        if not files or not self.available():
+            return []
+        params = {f"file_{i}": file for i, file in enumerate(files)}
+        placeholders = ",".join(f":file_{i}" for i in range(len(files)))
+        with get_mysql_client().begin() as conn:
+            rows = (
+                conn.execute(
+                    _sql_text(
+                        f"""SELECT title, file, background, diagnosis, solution
+                            FROM t_cases
+                            WHERE file IN ({placeholders})"""
+                    ),
+                    params,
+                )
+                .mappings()
+                .all()
+            )
+        by_file = {
+            r["file"]: {
+                "title": r["title"] or r["file"],
+                "file": r["file"],
+                "background": r["background"] or "",
+                "diagnosis": r["diagnosis"] or "",
+                "solution": r["solution"] or "",
+            }
+            for r in rows
+        }
+        return [by_file[file] for file in files if file in by_file]
+
     def _search(self, conn_started, log: str, limit: int) -> dict:
         started = conn_started
         self.ensure_built()

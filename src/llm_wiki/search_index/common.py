@@ -99,6 +99,9 @@ class SearchBackend:
     def search(self, log: str, limit: int = 3) -> dict | None:
         raise NotImplementedError
 
+    def get_contexts(self, files: list[str]) -> list[dict]:
+        raise NotImplementedError
+
     def stats(self) -> dict:
         raise NotImplementedError
 

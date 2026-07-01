@@ -86,6 +86,11 @@ def search(log: str) -> dict:
     return _search_files(log)
 
 
+def get_contexts(files: list[str]) -> list[dict]:
+    """按案例文件路径从当前数据库索引后端读取 RAG 上下文;不读取本地 Markdown。"""
+    return search_index.get_backend().get_contexts(files)
+
+
 def _search_files(log: str) -> dict:
     """纯文件兜底实现:精确 signature 子串命中 → token 重合度模糊召回 → 无命中门控。"""
     log_low = log.lower()
