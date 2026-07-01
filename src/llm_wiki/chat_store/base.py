@@ -292,5 +292,5 @@ class BaseChatStore:
                 "sessions": c.one("SELECT count(*) AS n FROM t_chat_sessions")["n"],
                 "messages": c.one("SELECT count(*) AS n FROM t_chat_messages")["n"],
                 "like": c.one("SELECT count(*) AS n FROM t_chat_feedbacks WHERE feedback='like'")["n"],
-                "dislike": c.one("SELECT count(*) AS n FROM t_chat_feedbacks WHERE feedback='dislike'")["n"],
+                "unlike": c.one("SELECT count(*) AS n FROM t_chat_feedbacks WHERE feedback='unlike'")["n"],
             }

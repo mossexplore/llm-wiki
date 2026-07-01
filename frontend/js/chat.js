@@ -468,16 +468,16 @@
       const msg = state.chatMessages.find(m => m.id === messageId);
       const clearing = msg && msg.feedback === feedback;
       let reason = null;
-      if (feedback === 'dislike' && !clearing) {
+      if (feedback === 'unlike' && !clearing) {
         reason = await feedbackReasonModal();
         if (reason === null) return;     // 用户取消
       }
       try {
         const payload = clearing
-          ? { feedback: 'none' }
+          ? { feedback: 'NONE' }
           : feedback === 'like'
           ? { feedback: 'like' }
-          : { feedback: 'dislike', reason };
+          : { feedback: 'unlike', reason };
         const r = await fetch('/api/chat/messages/' + encodeURIComponent(messageId) + '/feedback', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -653,7 +653,7 @@
       const refsHtml = chatRefsHtml(m.refs);
       const latency = chatMessageLatencyStatus(m);
       const fbUp = m.feedback === 'like' ? ' on' : '';
-      const fbDown = m.feedback === 'dislike' ? ' on dislike' : '';
+      const fbDown = m.feedback === 'unlike' ? ' on dislike' : '';
       const isLocal = String(m.id || '').startsWith('local-');
       const fbReason = feedbackReasonSummary(m.feedback_reason);
       return '<div class="chat-row agent">' +
@@ -666,8 +666,8 @@
           '<div class="chat-acts">' +
             '<button class="chat-act" data-copy="' + encodeURIComponent(m.content) + '" title="复制">' + iconCopy() + '</button>' +
             '<button class="chat-act' + fbUp + '" data-fb="like" data-mid="' + escapeHtml(m.id) + '" title="点赞">' + iconUp() + '</button>' +
-            '<button class="chat-act' + fbDown + '" data-fb="dislike" data-mid="' + escapeHtml(m.id) + '" title="点踩">' + iconDown() + '</button>' +
-            (m.feedback === 'dislike' && fbReason ? '<span class="chat-fb-reason" title="点踩原因">' + escapeHtml(fbReason) + '</span>' : '') +
+            '<button class="chat-act' + fbDown + '" data-fb="unlike" data-mid="' + escapeHtml(m.id) + '" title="点踩">' + iconDown() + '</button>' +
+            (m.feedback === 'unlike' && fbReason ? '<span class="chat-fb-reason" title="点踩原因">' + escapeHtml(fbReason) + '</span>' : '') +
           '</div>') +
         '</div>' +
       '</div>';

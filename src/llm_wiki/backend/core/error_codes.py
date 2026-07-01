@@ -15,7 +15,7 @@ class ErrorCode(Enum):
 
     CHAT_SESSION_NOT_FOUND = (20001, 404, "会话不存在")
     CHAT_MESSAGE_EMPTY = (20002, 400, "内容为空")
-    CHAT_FEEDBACK_INVALID_RATING = (20003, 400, "feedback 必须为 like、dislike 或 none")
+    CHAT_FEEDBACK_INVALID_RATING = (20003, 400, "feedback 必须为 like、unlike 或 NONE")
     CHAT_MESSAGE_NOT_FOUND = (20004, 404, "消息不存在")
     CHAT_FEEDBACK_ASSISTANT_ONLY = (20005, 400, "只能对 Agent 回复反馈")
     CHAT_FEEDBACK_REASON_REQUIRED = (20006, 400, "点踩请填写原因")

@@ -6,9 +6,11 @@ from llm_wiki.backend.schemas import FeedbackReasonReq, FeedbackReq
 
 def test_normalize_feedback_accepts_contract_values():
     assert normalize_feedback("like") == "like"
-    assert normalize_feedback("dislike") == "dislike"
-    assert normalize_feedback("none") == "none"
-    assert normalize_feedback("cancel") == "none"
+    assert normalize_feedback("unlike") == "unlike"
+    assert normalize_feedback("NONE") == "NONE"
+    assert normalize_feedback("dislike") is None
+    assert normalize_feedback("none") is None
+    assert normalize_feedback("cancel") is None
     assert normalize_feedback("up") is None
     assert normalize_feedback("down") is None
     assert normalize_feedback("bad") is None
@@ -45,7 +47,7 @@ def test_feedback_reason_json_filters_unknown_and_duplicate_types():
 def test_feedback_req_accepts_nested_reason_payload():
     req = FeedbackReq.model_validate(
         {
-            "feedback": "dislike",
+            "feedback": "unlike",
             "reason": {
                 "feedback_info": "回答不清楚",
                 "feedback_info_types": ["incorrect_information"],
@@ -53,7 +55,7 @@ def test_feedback_req_accepts_nested_reason_payload():
         }
     )
 
-    assert req.feedback == "dislike"
+    assert req.feedback == "unlike"
     assert req.reason.feedback_info == "回答不清楚"
     assert req.reason.feedback_info_types == ["incorrect_information"]
 

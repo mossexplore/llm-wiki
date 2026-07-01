@@ -109,7 +109,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_user ON t_chat_feedbacks(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_feedbacks_feedback ON t_chat_feedbacks(feedback)")
     conn.execute("UPDATE t_chat_feedbacks SET feedback='like' WHERE feedback='up'")
-    conn.execute("UPDATE t_chat_feedbacks SET feedback='dislike' WHERE feedback='down'")
+    conn.execute("UPDATE t_chat_feedbacks SET feedback='unlike' WHERE feedback IN ('down', 'dislike')")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(t_chat_messages)").fetchall()}
     for name, typ in MESSAGE_LATENCY_COLUMNS.items():
         if name not in cols:

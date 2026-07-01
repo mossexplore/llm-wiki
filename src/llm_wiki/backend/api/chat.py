@@ -54,13 +54,9 @@ def normalize_message_format(value: Optional[str]) -> str:
 
 
 def normalize_feedback(value: Optional[str]) -> Optional[str]:
-    feedback = (value or "").strip().lower()
-    if feedback == "like":
-        return "like"
-    if feedback == "dislike":
-        return "dislike"
-    if feedback in ("none", "cancel", "clear"):
-        return "none"
+    feedback = (value or "").strip()
+    if feedback in ("like", "unlike", "NONE"):
+        return feedback
     return None
 
 
@@ -349,7 +345,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 @router.post("/api/chat/messages/{message_id}/feedback")
 def chat_feedback(message_id: str, req: FeedbackReq):
     feedback = normalize_feedback(req.feedback)
-    if feedback not in ("like", "dislike", "none"):
+    if feedback not in ("like", "unlike", "NONE"):
         raise_api_error(ErrorCode.CHAT_FEEDBACK_INVALID_RATING)
     req_user_id = (req.user_id or "").strip() or None
     msg = chat_store.message_exists(message_id, user_id=req_user_id)  # 传 user_id 时要求消息归属该用户
@@ -357,11 +353,11 @@ def chat_feedback(message_id: str, req: FeedbackReq):
         raise_api_error(ErrorCode.CHAT_MESSAGE_NOT_FOUND)
     if msg["role"] != "assistant":
         raise_api_error(ErrorCode.CHAT_FEEDBACK_ASSISTANT_ONLY)
-    if feedback == "none":
+    if feedback == "NONE":
         chat_store.clear_feedback(message_id)
         return success({"ok": True, "message_id": message_id, "feedback": None, "reason": None})
     reason = feedback_reason_json(req.reason)
-    if feedback == "dislike" and not reason:
+    if feedback == "unlike" and not reason:
         raise_api_error(ErrorCode.CHAT_FEEDBACK_REASON_REQUIRED)
     user_id = req_user_id or msg.get("user_id")
     return success(chat_store.set_feedback(message_id, msg["session_id"], feedback, reason, user_id))

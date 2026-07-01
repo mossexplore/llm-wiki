@@ -109,9 +109,9 @@ def test_set_feedback_insert_then_overwrite():
     s = store.create_session()
     a = store.add_message(s["id"], "assistant", "a")
     f1 = store.set_feedback(a["id"], s["id"], "like")
-    f2 = store.set_feedback(a["id"], s["id"], "dislike", reason="不准")
+    f2 = store.set_feedback(a["id"], s["id"], "unlike", reason="不准")
     assert f1["id"] == f2["id"]
-    assert f2["feedback"] == "dislike"
+    assert f2["feedback"] == "unlike"
     assert f2["reason"] == "不准"
 
 

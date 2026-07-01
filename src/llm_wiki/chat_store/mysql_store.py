@@ -166,7 +166,9 @@ def _migrate_feedback_columns(conn) -> None:
         return
     _add_index_if_missing(conn, "t_chat_feedbacks", "idx_chat_feedbacks_feedback", "feedback")
     conn.execute(_sql_text("UPDATE t_chat_feedbacks SET feedback='like' WHERE feedback='up'"))
-    conn.execute(_sql_text("UPDATE t_chat_feedbacks SET feedback='dislike' WHERE feedback='down'"))
+    conn.execute(
+        _sql_text("UPDATE t_chat_feedbacks SET feedback='unlike' WHERE feedback IN ('down', 'dislike')")
+    )
 
 
 def _ensure_default_session_source(conn) -> None:
