@@ -22,7 +22,7 @@ chat:
 # storage 段:检索索引与对话运行数据的存储后端。默认 sqlite,不需要 MySQL 可保持不改。
 storage:
   backend: "sqlite"                       # sqlite | mysql
-  auto_reindex_on_startup: true           # 服务启动时是否从 wiki/cases/ 整库重建检索索引
+  auto_reindex_on_startup: false          # 服务启动时是否从 wiki/cases/ 整库重建检索索引
   local_search: true                      # true 检索本地 wiki/cases/*.md;false 只从数据库索引检索
   mysql:
     host: "127.0.0.1"

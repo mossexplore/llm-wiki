@@ -41,13 +41,13 @@ def _as_bool(value, default: bool) -> bool:
 
 
 def auto_reindex_on_startup() -> bool:
-    """返回启动时是否自动从 wiki/cases/ 整库重建检索索引;缺省为 true。"""
+    """返回启动时是否自动从 wiki/cases/ 整库重建检索索引;缺省为 false。"""
     data = _config_data()
     storage = data.get("storage") or {}
     value = os.environ.get("LOG_WIKI_AUTO_REINDEX_ON_STARTUP")
     if value in (None, ""):
         value = storage.get("auto_reindex_on_startup")
-    return _as_bool(value, True)
+    return _as_bool(value, False)
 
 
 def local_search() -> bool:

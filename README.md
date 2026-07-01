@@ -106,14 +106,14 @@ chat:
   thinking: true
 storage:
   backend: "sqlite"               # sqlite | mysql
-  auto_reindex_on_startup: true   # 启动时是否从 wiki/cases/ 整库重建检索索引
+  auto_reindex_on_startup: false  # 启动时是否从 wiki/cases/ 整库重建检索索引
 ```
 
 - `base_url` 可选，用于代理、Azure 或本地 OpenAI 兼容网关；`model` 未配置时默认 `gpt-4o`。
 - `chat.thinking` 控制对话模型是否启用 Think/Thinking 模式，默认 `true`；设为 `false` 时会向兼容网关传 `thinking.type=disabled`，通常可减少首字等待。
 - `storage.backend` 默认 `sqlite`：检索索引写到 `index/search.db`，对话数据写到 `db/chat.db`。改为 `mysql` 并填写 `storage.mysql` 后，两者都使用 MySQL（SQLAlchemy Core 管理连接池与事务，驱动 `mysql+pymysql`）。
 - 环境变量 `LOG_WIKI_STORAGE_BACKEND`、`LOG_WIKI_AUTO_REINDEX_ON_STARTUP`、`LOG_WIKI_MYSQL_*` 可覆盖同名配置。
-- `storage.auto_reindex_on_startup` 控制启动时是否从 `wiki/cases/` **整表删除并重建**检索索引(`t_cases`/`t_case_signatures`)。生产中若知识已直接写入数据库、不以 Markdown 文件为源,务必设为 `false`,否则会被文件内容覆盖(文件缺失时会清空索引)。设为 `false` 不影响精确命中:服务启动时仍会从库里现有的 `t_case_signatures` 读取并编译 Aho-Corasick 自动机(只读,不删不写)。
+- `storage.auto_reindex_on_startup` 默认 `false`，控制启动时是否从 `wiki/cases/` **整表删除并重建**检索索引(`t_cases`/`t_case_signatures`)。生产中若知识已直接写入数据库、不以 Markdown 文件为源,应保持 `false`,否则会被文件内容覆盖(文件缺失时会清空索引)。设为 `false` 不影响精确命中:服务启动时仍会从库里现有的 `t_case_signatures` 读取并编译 Aho-Corasick 自动机(只读,不删不写)。
 
 > **不要提交真实 API key。** 公开仓库只提交 `config.example.yaml`，把 `config.yaml`、私有网关地址和密钥放在本地私有配置中（`config.yaml` 已被 `.gitignore` 忽略）。
 
@@ -150,7 +150,7 @@ storage:
 2. **模糊候选**：精确命中失败时，用当前配置的索引后端返回可能相关案例。默认是 **SQLite + FTS5（BM25 全文检索、trigram 中文分词）**；切到 MySQL 时使用 **InnoDB FULLTEXT + ngram**。
 3. **无命中门控**：没有相关案例时明确返回暂无案例，不编造答案。
 
-检索索引由 `wiki/cases/*.md` 派生（Markdown 始终是权威源），入库/更新/删除时自动同步；服务启动时默认整库重建，可用 `storage.auto_reindex_on_startup: false` 关闭。默认 SQLite 场景下 FTS5 不可用时会自动回退到纯文件扫描，功能不变。索引表结构、查询示例和 MySQL 配置说明见 [db/README.md](db/README.md)。
+检索索引可由 `wiki/cases/*.md` 派生，入库/更新/删除时自动同步；服务启动时默认不整库重建，需要从文件回灌时可显式设置 `storage.auto_reindex_on_startup: true`。默认 SQLite 场景下 FTS5 不可用时会自动回退到纯文件扫描，功能不变。索引表结构、查询示例和 MySQL 配置说明见 [db/README.md](db/README.md)。
 
 ### 知识图谱
 
