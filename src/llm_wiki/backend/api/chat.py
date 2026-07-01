@@ -176,6 +176,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 {
                     "type": "status",
                     "request_id": request_id,
+                    "session_id": session_id,
                     "stage": "retrieving",
                     "elapsed_ms": int((time.perf_counter() - started) * 1000),
                 }
@@ -217,6 +218,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 {
                     "type": "status",
                     "request_id": request_id,
+                    "session_id": session_id,
                     "stage": "generating",
                     "source": source,
                     "mode": mode,
@@ -241,6 +243,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                         {
                             "type": "status",
                             "request_id": request_id,
+                            "session_id": session_id,
                             "stage": "first_delta",
                             "source": source,
                             "mode": mode,
@@ -258,7 +261,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                         f"first_delta_ms={first_delta_ms}"
                     )
                 acc += delta
-                yield ndjson({"type": "delta", "request_id": request_id, "text": delta})
+                yield ndjson({"type": "delta", "request_id": request_id, "session_id": session_id, "text": delta})
             total_ms = int((time.perf_counter() - started) * 1000)
             if model_wait_ms is None and model_request_start_ms is not None:
                 model_wait_ms = total_ms - model_request_start_ms
@@ -284,6 +287,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 {
                     "type": "done",
                     "request_id": request_id,
+                    "session_id": session_id,
                     "message_id": saved["id"],
                     "source": source,
                     "mode": mode,
@@ -330,6 +334,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 {
                     "type": "error",
                     "request_id": request_id,
+                    "session_id": session_id,
                     "code": ErrorCode.INTERNAL_ERROR.code,
                     "error": stream_error_text(request_id),
                 }

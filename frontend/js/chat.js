@@ -3,6 +3,8 @@
     // 答案并标注来源;否则流式调用大模型。所有会话/消息/反馈都落库(见后端)。
 
     let chatLatencyTimer = null;
+    let chatStreamAbortController = null;
+    let chatStreamSeq = 0;
 
     function iconChat() { return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'; }
     function iconSend() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4 20-7z"></path></svg>'; }
@@ -103,7 +105,7 @@
 
     async function newChatSession() {
       try {
-        stopChatLatencyTimer();
+        abortChatStream();
         const r = await fetch('/api/chat/sessions', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: '新会话' })
@@ -115,9 +117,6 @@
         state.chatSessions.unshift(s);
         state.chatActive = s.id;
         state.chatMessages = [];
-        state.chatStreamText = '';
-        state.chatStreamMeta = null;
-        state.chatStreamStatus = null;
         render();
         const ta = document.getElementById('chatInput');
         if (ta) ta.focus();
@@ -126,12 +125,9 @@
 
     async function selectChatSession(id) {
       if (!id) return;
-      stopChatLatencyTimer();
+      abortChatStream();
       state.chatActive = id;
       state.chatMessagesLoading = true;
-      state.chatStreamText = '';
-      state.chatStreamMeta = null;
-      state.chatStreamStatus = null;
       render();
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id) + '/messages/list', {
@@ -199,9 +195,7 @@
         state.chatActive = '';
         state.chatMessages = [];
         state.chatMessagesLoading = false;
-        state.chatStreamText = '';
-        state.chatStreamMeta = null;
-        state.chatStreamStatus = null;
+        resetChatStreamState();
         state.chatInput = '';
         render();
         const deleted = data.deleted || {};
@@ -222,6 +216,9 @@
         if (!state.chatActive) return;
       }
       const sessionId = state.chatActive;
+      const streamToken = String(++chatStreamSeq) + ':' + sessionId;
+      if (chatStreamAbortController) chatStreamAbortController.abort();
+      chatStreamAbortController = new AbortController();
       stopChatLatencyTimer();
       state.chatMessages.push({ role: 'user', content: text, id: 'local-' + Date.now() });
       state.chatInput = '';
@@ -229,34 +226,46 @@
       state.chatStreamText = '';
       state.chatStreamMeta = null;
       state.chatStreamStatus = { stage: 'retrieving', elapsed_ms: 0 };
+      state.chatStreamToken = streamToken;
       render();
 
+      let completed = false;
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(sessionId) + '/messages', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: text })
+          body: JSON.stringify({ content: text }),
+          signal: chatStreamAbortController.signal
         });
         if (noBackend(r.status)) throw new Error('后端未连接');
         if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(apiErrorMessage(d, '发送失败')); }
-        await consumeChatStream(r);
+        completed = await consumeChatStream(r, sessionId, streamToken);
       } catch (e) {
-        state.chatStreaming = false;
-        stopChatLatencyTimer();
+        if (e && e.name === 'AbortError') return;
+        if (!isCurrentChatStream(sessionId, streamToken)) return;
+        resetChatStreamState();
         render();
         showToast(String(e && e.message || e));
       }
       // 流结束后刷新会话列表(标题/排序可能变化)
-      loadChatSessions(false);
+      if (completed) loadChatSessions(false);
     }
 
-    async function consumeChatStream(resp) {
+    async function consumeChatStream(resp, sessionId, streamToken) {
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
       let doneMeta = null;
       let errored = '';
       while (true) {
+        if (!isCurrentChatStream(sessionId, streamToken)) {
+          await cancelChatReader(reader);
+          return false;
+        }
         const { value, done } = await reader.read();
+        if (!isCurrentChatStream(sessionId, streamToken)) {
+          await cancelChatReader(reader);
+          return false;
+        }
         if (done) break;
         buf += decoder.decode(value, { stream: true });
         let nl;
@@ -266,6 +275,11 @@
           if (!line) continue;
           let ev;
           try { ev = JSON.parse(line); } catch (_) { continue; }
+          if (!isCurrentChatStream(sessionId, streamToken)) {
+            await cancelChatReader(reader);
+            return false;
+          }
+          if (ev.session_id && ev.session_id !== sessionId) continue;
           if (ev.type === 'meta') {
             state.chatStreamMeta = { source: ev.source, mode: ev.mode, refs: ev.refs || [], retrieval_ms: ev.retrieval_ms };
             state.chatStreamStatus = Object.assign({}, state.chatStreamStatus || {}, {
@@ -299,6 +313,7 @@
           }
         }
       }
+      if (!isCurrentChatStream(sessionId, streamToken)) return false;
       state.chatStreaming = false;
       stopChatLatencyTimer();
       if (errored) {
@@ -325,7 +340,35 @@
       state.chatStreamText = '';
       state.chatStreamMeta = null;
       state.chatStreamStatus = null;
+      state.chatStreamToken = '';
+      chatStreamAbortController = null;
       render();
+      return true;
+    }
+
+    function isCurrentChatStream(sessionId, streamToken) {
+      return state.chatActive === sessionId && state.chatStreamToken === streamToken;
+    }
+
+    function resetChatStreamState() {
+      chatStreamAbortController = null;
+      state.chatStreaming = false;
+      state.chatStreamText = '';
+      state.chatStreamMeta = null;
+      state.chatStreamStatus = null;
+      state.chatStreamToken = '';
+      stopChatLatencyTimer();
+    }
+
+    function abortChatStream() {
+      const controller = chatStreamAbortController;
+      chatStreamAbortController = null;
+      if (controller) controller.abort();
+      resetChatStreamState();
+    }
+
+    async function cancelChatReader(reader) {
+      try { await reader.cancel(); } catch (_) {}
     }
 
     function startChatLatencyTimer() {

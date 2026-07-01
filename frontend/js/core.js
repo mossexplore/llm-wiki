@@ -58,6 +58,7 @@
       chatStreamText: '',           // 流式生成中的临时文本
       chatStreamMeta: null,         // 流式生成中的来源信息 {source,mode,refs}
       chatStreamStatus: null,       // 流式状态与时延 {stage,retrieval_ms,first_delta_ms,elapsed_ms}
+      chatStreamToken: '',          // 当前流式请求标识,用于切换会话时隔离旧响应
       evalK: 3,                     // 评测 top-k:1 | 3 | 5
       evalRunning: false,
       evalReport: null              // /api/eval/run 返回的报告
