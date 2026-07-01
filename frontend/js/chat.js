@@ -3,7 +3,7 @@
     // 答案并标注来源;否则流式调用大模型。所有会话/消息/反馈都落库(见后端)。
 
     let chatLatencyTimer = null;
-    let chatStreamAbortController = null;
+    let chatStreamAbortControllers = {};
     let chatStreamSeq = 0;
 
     function iconChat() { return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'; }
@@ -105,7 +105,6 @@
 
     async function newChatSession() {
       try {
-        abortChatStream();
         const r = await fetch('/api/chat/sessions', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: '新会话' })
@@ -117,6 +116,7 @@
         state.chatSessions.unshift(s);
         state.chatActive = s.id;
         state.chatMessages = [];
+        syncActiveChatStreamState();
         render();
         const ta = document.getElementById('chatInput');
         if (ta) ta.focus();
@@ -125,9 +125,9 @@
 
     async function selectChatSession(id) {
       if (!id) return;
-      abortChatStream();
       state.chatActive = id;
       state.chatMessagesLoading = true;
+      syncActiveChatStreamState();
       render();
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(id) + '/messages/list', {
@@ -136,11 +136,15 @@
         });
         const payload = await r.json();
         if (!r.ok) throw new Error(apiErrorMessage(payload, '加载消息失败'));
+        if (state.chatActive !== id) return;
         state.chatMessages = apiData(payload).items || [];
         state.chatMessagesLoading = false;
+        syncActiveChatStreamState();
         render();
       } catch (e) {
+        if (state.chatActive !== id) return;
         state.chatMessagesLoading = false;
+        syncActiveChatStreamState();
         render();
         showToast(String(e && e.message || e));
       }
@@ -160,6 +164,7 @@
         });
         if (noBackend(r.status)) { showToast('后端未连接 · 无法删除'); return; }
         if (!r.ok) { const d = await r.json(); throw new Error(apiErrorMessage(d, '删除失败')); }
+        abortChatStream(id);
         state.chatSessions = state.chatSessions.filter(s => s.id !== id);
         if (state.chatActive === id) {
           state.chatActive = '';
@@ -172,7 +177,7 @@
     }
 
     async function clearChatSessions() {
-      if (state.chatStreaming) return;
+      if (hasChatStreaming()) return;
       const n = state.chatSessions.length;
       if (!n) return;
       const ok = await confirmModal({
@@ -182,7 +187,7 @@
       });
       if (!ok) return;
       try {
-        stopChatLatencyTimer();
+        abortAllChatStreams();
         const r = await fetch('/api/chat/sessions/clear', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({})
@@ -195,7 +200,7 @@
         state.chatActive = '';
         state.chatMessages = [];
         state.chatMessagesLoading = false;
-        resetChatStreamState();
+        syncActiveChatStreamState();
         state.chatInput = '';
         render();
         const deleted = data.deleted || {};
@@ -207,7 +212,7 @@
     }
 
     async function sendChatMessage() {
-      if (state.chatStreaming) return;
+      if (isSessionStreaming(state.chatActive)) return;
       const text = (state.chatInput || '').trim();
       if (!text) { showToast('请输入问题'); return; }
       // 没有会话则先建一个
@@ -217,16 +222,19 @@
       }
       const sessionId = state.chatActive;
       const streamToken = String(++chatStreamSeq) + ':' + sessionId;
-      if (chatStreamAbortController) chatStreamAbortController.abort();
-      chatStreamAbortController = new AbortController();
+      abortChatStream(sessionId);
+      chatStreamAbortControllers[sessionId] = new AbortController();
       stopChatLatencyTimer();
       state.chatMessages.push({ role: 'user', content: text, id: 'local-' + Date.now() });
       state.chatInput = '';
-      state.chatStreaming = true;
-      state.chatStreamText = '';
-      state.chatStreamMeta = null;
-      state.chatStreamStatus = { stage: 'retrieving', elapsed_ms: 0 };
-      state.chatStreamToken = streamToken;
+      state.chatStreams[sessionId] = {
+        token: streamToken,
+        text: '',
+        meta: null,
+        status: { stage: 'retrieving', elapsed_ms: 0 },
+        streaming: true
+      };
+      syncActiveChatStreamState();
       render();
 
       let completed = false;
@@ -234,7 +242,7 @@
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(sessionId) + '/messages', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: text }),
-          signal: chatStreamAbortController.signal
+          signal: chatStreamAbortControllers[sessionId].signal
         });
         if (noBackend(r.status)) throw new Error('后端未连接');
         if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(apiErrorMessage(d, '发送失败')); }
@@ -242,8 +250,11 @@
       } catch (e) {
         if (e && e.name === 'AbortError') return;
         if (!isCurrentChatStream(sessionId, streamToken)) return;
-        resetChatStreamState();
-        render();
+        clearChatStream(sessionId);
+        if (state.chatActive === sessionId) {
+          syncActiveChatStreamState();
+          render();
+        }
         showToast(String(e && e.message || e));
       }
       // 流结束后刷新会话列表(标题/排序可能变化)
@@ -280,25 +291,27 @@
             return false;
           }
           if (ev.session_id && ev.session_id !== sessionId) continue;
+          const streamState = getChatStream(sessionId);
+          if (!streamState) continue;
           if (ev.type === 'meta') {
-            state.chatStreamMeta = { source: ev.source, mode: ev.mode, refs: ev.refs || [], retrieval_ms: ev.retrieval_ms };
-            state.chatStreamStatus = Object.assign({}, state.chatStreamStatus || {}, {
+            streamState.meta = { source: ev.source, mode: ev.mode, refs: ev.refs || [], retrieval_ms: ev.retrieval_ms };
+            streamState.status = Object.assign({}, streamState.status || {}, {
               stage: 'retrieved',
               retrieval_ms: ev.retrieval_ms,
               elapsed_ms: ev.retrieval_ms
             });
-            render();
+            renderActiveChatStream(sessionId);
           } else if (ev.type === 'status') {
-            state.chatStreamStatus = Object.assign({}, state.chatStreamStatus || {}, ev);
-            if (ev.stage === 'generating') startChatLatencyTimer();
-            if (ev.stage === 'first_delta') stopChatLatencyTimer();
-            render();
+            streamState.status = Object.assign({}, streamState.status || {}, ev);
+            if (ev.stage === 'generating') startChatLatencyTimer(sessionId, streamToken);
+            if (ev.stage === 'first_delta' && state.chatActive === sessionId) stopChatLatencyTimer();
+            renderActiveChatStream(sessionId);
           } else if (ev.type === 'delta') {
-            state.chatStreamText += ev.text || '';
-            updateStreamDOM();
+            streamState.text += ev.text || '';
+            updateStreamDOM(sessionId);
           } else if (ev.type === 'done') {
             doneMeta = ev;
-            state.chatStreamStatus = Object.assign({}, state.chatStreamStatus || {}, {
+            streamState.status = Object.assign({}, streamState.status || {}, {
               stage: 'done',
               retrieval_ms: ev.retrieval_ms,
               model_start_ms: ev.model_start_ms,
@@ -314,20 +327,22 @@
         }
       }
       if (!isCurrentChatStream(sessionId, streamToken)) return false;
-      state.chatStreaming = false;
-      stopChatLatencyTimer();
+      const streamState = getChatStream(sessionId);
+      if (!streamState) return false;
+      streamState.streaming = false;
+      if (state.chatActive === sessionId) stopChatLatencyTimer();
       if (errored) {
-        showToast('生成出错:' + errored);
+        if (state.chatActive === sessionId) showToast('生成出错:' + errored);
         // 仍把已生成内容作为一条回复展示
       }
-      if (state.chatStreamText) {
+      if (streamState.text && state.chatActive === sessionId && !state.chatMessagesLoading) {
         state.chatMessages.push({
           role: 'assistant',
-          content: state.chatStreamText,
+          content: streamState.text,
           id: doneMeta && doneMeta.message_id || ('local-' + Date.now()),
-          answer_source: state.chatStreamMeta && state.chatStreamMeta.source || (doneMeta && doneMeta.source),
-          retrieval_mode: state.chatStreamMeta && state.chatStreamMeta.mode || (doneMeta && doneMeta.mode),
-          refs: (state.chatStreamMeta && state.chatStreamMeta.refs) || (doneMeta && doneMeta.refs) || [],
+          answer_source: streamState.meta && streamState.meta.source || (doneMeta && doneMeta.source),
+          retrieval_mode: streamState.meta && streamState.meta.mode || (doneMeta && doneMeta.mode),
+          refs: (streamState.meta && streamState.meta.refs) || (doneMeta && doneMeta.refs) || [],
           retrieval_ms: doneMeta && doneMeta.retrieval_ms,
           model_wait_ms: doneMeta && doneMeta.model_wait_ms,
           first_delta_ms: doneMeta && doneMeta.first_delta_ms,
@@ -337,21 +352,51 @@
 	          prompt_chars: doneMeta && doneMeta.prompt_chars,
 	        });
       }
-      state.chatStreamText = '';
-      state.chatStreamMeta = null;
-      state.chatStreamStatus = null;
-      state.chatStreamToken = '';
-      chatStreamAbortController = null;
-      render();
+      clearChatStream(sessionId);
+      if (state.chatActive === sessionId) {
+        syncActiveChatStreamState();
+        render();
+      }
       return true;
     }
 
     function isCurrentChatStream(sessionId, streamToken) {
-      return state.chatActive === sessionId && state.chatStreamToken === streamToken;
+      const streamState = getChatStream(sessionId);
+      return !!(streamState && streamState.streaming && streamState.token === streamToken);
+    }
+
+    function getChatStream(sessionId) {
+      return sessionId ? (state.chatStreams && state.chatStreams[sessionId]) : null;
+    }
+
+    function isSessionStreaming(sessionId) {
+      const streamState = getChatStream(sessionId);
+      return !!(streamState && streamState.streaming);
+    }
+
+    function hasChatStreaming() {
+      return Object.values(state.chatStreams || {}).some(s => s && s.streaming);
+    }
+
+    function syncActiveChatStreamState() {
+      const streamState = getChatStream(state.chatActive);
+      state.chatStreaming = !!(streamState && streamState.streaming);
+      state.chatStreamText = streamState ? streamState.text || '' : '';
+      state.chatStreamMeta = streamState ? streamState.meta || null : null;
+      state.chatStreamStatus = streamState ? streamState.status || null : null;
+      state.chatStreamToken = streamState ? streamState.token || '' : '';
+    }
+
+    function clearChatStream(sessionId) {
+      delete chatStreamAbortControllers[sessionId];
+      if (state.chatStreams) delete state.chatStreams[sessionId];
+      if (state.chatActive === sessionId) {
+        stopChatLatencyTimer();
+        syncActiveChatStreamState();
+      }
     }
 
     function resetChatStreamState() {
-      chatStreamAbortController = null;
       state.chatStreaming = false;
       state.chatStreamText = '';
       state.chatStreamMeta = null;
@@ -360,10 +405,23 @@
       stopChatLatencyTimer();
     }
 
-    function abortChatStream() {
-      const controller = chatStreamAbortController;
-      chatStreamAbortController = null;
+    function abortChatStream(sessionId) {
+      const controller = chatStreamAbortControllers[sessionId];
+      delete chatStreamAbortControllers[sessionId];
       if (controller) controller.abort();
+      clearChatStream(sessionId);
+      if (state.chatActive === sessionId) {
+        resetChatStreamState();
+      }
+    }
+
+    function abortAllChatStreams() {
+      Object.keys(chatStreamAbortControllers).forEach(sessionId => {
+        const controller = chatStreamAbortControllers[sessionId];
+        if (controller) controller.abort();
+      });
+      chatStreamAbortControllers = {};
+      state.chatStreams = {};
       resetChatStreamState();
     }
 
@@ -371,19 +429,32 @@
       try { await reader.cancel(); } catch (_) {}
     }
 
-    function startChatLatencyTimer() {
-      stopChatLatencyTimer();
+    function renderActiveChatStream(sessionId) {
+      if (state.chatActive !== sessionId) return;
+      syncActiveChatStreamState();
+      render();
+    }
+
+    function startChatLatencyTimer(sessionId, streamToken) {
+      const streamState = getChatStream(sessionId);
+      if (!streamState || streamState.token !== streamToken) return;
       const startedAt = Date.now();
-      state.chatStreamStatus = Object.assign({}, state.chatStreamStatus || {}, { wait_started_at: startedAt });
+      streamState.status = Object.assign({}, streamState.status || {}, { wait_started_at: startedAt });
+      if (state.chatActive === sessionId) syncActiveChatStreamState();
+      if (state.chatActive !== sessionId) return;
+      stopChatLatencyTimer();
       chatLatencyTimer = setInterval(() => {
-        const st = state.chatStreamStatus || {};
-        if (!state.chatStreaming || st.stage !== 'generating' || st.first_delta_ms) {
+        const current = getChatStream(sessionId);
+        const st = current && current.status || {};
+        if (!current || !current.streaming || current.token !== streamToken ||
+            state.chatActive !== sessionId || st.stage !== 'generating' || st.first_delta_ms) {
           stopChatLatencyTimer();
           return;
         }
-        state.chatStreamStatus = Object.assign({}, st, {
+        current.status = Object.assign({}, st, {
           wait_ms: Date.now() - (st.wait_started_at || startedAt)
         });
+        syncActiveChatStreamState();
         updateLatencyDOM();
       }, 1000);
     }
@@ -401,7 +472,9 @@
     }
 
     // 流式期间只更新生成中气泡的 DOM,避免整页重渲染丢失滚动/输入焦点
-    function updateStreamDOM() {
+    function updateStreamDOM(sessionId) {
+      if (state.chatActive !== sessionId) return;
+      syncActiveChatStreamState();
       const el = document.getElementById('chatStreamBody');
       if (el) {
         el.innerHTML = renderMarkdown(state.chatStreamText) + '<span class="caret"></span>';
@@ -717,7 +790,10 @@
     }
 
     function renderChatMain() {
+      syncActiveChatStreamState();
       const sessions = state.chatSessions;
+      const activeStreaming = isSessionStreaming(state.chatActive);
+      const anyStreaming = hasChatStreaming();
       const sideList = state.chatSessionsLoading && !sessions.length
         ? '<div class="empty">' + iconSpin() + '<div>加载中</div></div>'
         : (!sessions.length
@@ -737,7 +813,7 @@
           '<button class="btn primary" id="chatEmptyNew" type="button" style="margin-top:18px">' + iconPlus() + '新建聊天</button></div>';
       } else {
         const msgs = state.chatMessages.map(renderChatMessage).join('');
-        const streaming = state.chatStreaming
+        const streaming = activeStreaming
           ? '<div class="chat-row agent"><div class="chat-avatar">' + iconChat() + '</div><div class="chat-bubble agent">' +
               '<div class="chat-srcline">' +
                 (state.chatStreamMeta ? srcBadge(state.chatStreamMeta.source, state.chatStreamMeta.mode) : '<span class="src-badge muted">' + iconSpin() + '检索中…</span>') +
@@ -746,7 +822,7 @@
               '<div class="chat-md" id="chatStreamBody">' + (state.chatStreamText ? renderMarkdown(state.chatStreamText) + '<span class="caret"></span>' : '<span class="caret"></span>') + '</div>' +
             '</div></div>'
           : '';
-        const empty = (!state.chatMessages.length && !state.chatStreaming)
+        const empty = (!state.chatMessages.length && !activeStreaming)
           ? '<div class="empty" style="margin:auto">' + iconChat() + '<div style="font-size:13px">发送第一条消息开始对话</div></div>'
           : '';
         convo =
@@ -754,8 +830,8 @@
             (state.chatMessagesLoading ? '<div class="empty">' + iconSpin() + '<div>加载消息中</div></div>' : (empty + msgs + streaming)) +
           '</div>' +
           '<div class="chat-input-bar">' +
-            '<textarea id="chatInput" class="field" placeholder="输入你的问题,Enter 发送 / Shift+Enter 换行" rows="1" ' + (state.chatStreaming ? 'disabled' : '') + '>' + escapeHtml(state.chatInput) + '</textarea>' +
-            '<button class="btn primary chat-send" id="chatSend" type="button" ' + (state.chatStreaming ? 'disabled' : '') + '>' + (state.chatStreaming ? iconSpin() : iconSend()) + '</button>' +
+            '<textarea id="chatInput" class="field" placeholder="输入你的问题,Enter 发送 / Shift+Enter 换行" rows="1" ' + (activeStreaming ? 'disabled' : '') + '>' + escapeHtml(state.chatInput) + '</textarea>' +
+            '<button class="btn primary chat-send" id="chatSend" type="button" ' + (activeStreaming ? 'disabled' : '') + '>' + (activeStreaming ? iconSpin() : iconSend()) + '</button>' +
           '</div>';
       }
 
@@ -764,7 +840,7 @@
           '<div class="card-head knowledge-head">' +
             '<div style="min-width:0"><div class="kicker" style="overflow:hidden;text-overflow:ellipsis">CHAT · AGENT</div><h3>会话</h3></div>' +
             '<div class="knowledge-actions">' +
-              (state.chatSessions.length ? '<button class="btn sm danger" id="chatClear" type="button" title="清空全部历史会话" ' + (state.chatStreaming ? 'disabled' : '') + '>' + iconTrash() + '清空</button>' : '') +
+              (state.chatSessions.length ? '<button class="btn sm danger" id="chatClear" type="button" title="清空全部历史会话" ' + (anyStreaming ? 'disabled' : '') + '>' + iconTrash() + '清空</button>' : '') +
               '<button class="btn sm primary" id="chatNew" type="button" title="新建聊天">' + iconPlus() + '新建</button>' +
             '</div>' +
           '</div>' +
