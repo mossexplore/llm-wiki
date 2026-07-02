@@ -2,8 +2,7 @@
 """
 search_index.py — 检索索引后端入口。
 
-默认使用 SQLite + FTS5;配置 storage.backend=mysql 后切到 MySQL FULLTEXT。
-具体实现分别在 search_index_sqlite.py 与 search_index_mysql.py。
+chat 分支:固定使用 MySQL FULLTEXT(mysql_backend),不提供 SQLite。
 
 可单独运行(便于排障):
     python -m llm_wiki.search_index reindex
@@ -17,20 +16,15 @@ import json
 import logging
 import sys
 
-from llm_wiki.common import storage_config
-
 from .common import SearchBackend, case_from_file, exact_signatures, logger
 from .mysql_backend import MySQLSearch
-from .sqlite_backend import SqliteSearch
 
-# case_from_file / exact_signatures 在此聚合再导出,供 query.py、search_sync 复用。
+# case_from_file / exact_signatures 在此聚合再导出,供 query.py 复用。
 __all__ = ["SearchBackend", "case_from_file", "exact_signatures", "logger", "get_backend", "make_backend"]
 
 
 def make_backend() -> SearchBackend:
-    if storage_config.storage_backend() == "mysql":
-        return MySQLSearch()
-    return SqliteSearch()
+    return MySQLSearch()
 
 
 _backend: SearchBackend | None = None  # 惰性单例:首次用到检索时才按配置构建后端
@@ -40,7 +34,7 @@ def get_backend() -> SearchBackend:
     """返回进程内共享的检索后端;首次调用时按配置构建。
 
     惰性化是为了「import search_index ≠ 立刻建后端读配置」—— 只引用 case_from_file 等
-    纯函数(如 search_sync、纯对话路径)时,不会触发后端初始化的副作用。
+    纯函数(如纯对话路径)时,不会触发后端初始化的副作用。
     """
     global _backend
     if _backend is None:

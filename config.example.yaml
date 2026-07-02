@@ -1,29 +1,28 @@
-# 完整 config.yaml 样例 —— 真实密钥请只放在本地私有配置中,不要提交 config.yaml
+# 完整 config.yaml 样例(chat 分支) —— 真实密钥请只放在本地私有配置中,不要提交 config.yaml
 env: "dev"                                # dev 时会设置 NO_PROXY=127.0.0.1;生产/代理环境可改为 product
 
 # project.root 可选;不填时会按源码位置自动推导仓库根目录。
 project:
   root: ""                                # 例: /opt/wiserec-wiki
 
-# openai 段:写入知识(LLM 抽取)用。
+# openai 段:chat 段缺省时的默认基底。
 openai:
-  api_key: "sk-写入知识用密钥"             # 必填
+  api_key: "sk-基底密钥"                   # 必填
   base_url: "https://api.openai.com/v1"   # 走代理/Azure/本地兼容网关时改这里;留空则用 SDK 默认
-  model: "gpt-4o"                        # 写入知识/结构化抽取用模型
+  model: "gpt-4o"
 
 # chat 段:对话 Agent 用。会以 openai 段为基底,这里只需覆盖要改的项。
-# 如果对话和写入知识共用同一套网关/密钥,可以省略 api_key/base_url,只保留 model/thinking。
 chat:
   api_key: "sk-对话用密钥"                # 不填则继承 openai.api_key
   base_url: "https://api.openai.com/v1"   # 不填则继承 openai.base_url
   model: "gpt-4o-mini"                   # 对话用模型
   thinking: true                         # 是否启用 Think/Thinking 模式;默认 true,设为 false 可降低首字等待
 
-# storage 段:检索索引与对话运行数据的存储后端。默认 sqlite,不需要 MySQL 可保持不改。
+# storage 段:chat 分支只支持 MySQL,mysql 连接信息必填。
 storage:
-  backend: "sqlite"                       # sqlite | mysql
-  auto_reindex_on_startup: false          # 服务启动时是否从 wiki/cases/ 整库重建检索索引
-  local_search: true                      # true 检索本地 wiki/cases/*.md;false 只从数据库索引检索
+  backend: "mysql"                        # chat 分支固定 mysql(填 sqlite 也会按 mysql 运行)
+  auto_reindex_on_startup: false          # chat 分支无 wiki/cases/ 文件源,必须保持 false,否则启动会清空检索表
+  local_search: false                     # chat 分支无本地知识文件,固定 false:只从 MySQL 索引检索
   mysql:
     host: "127.0.0.1"
     port: 3306

@@ -56,8 +56,6 @@ ignore = ["E402"]
 
 [project.scripts]
 llm-wiki-chat-store = "llm_wiki.chat_store:main"
-llm-wiki-ingest = "llm_wiki.knowledge.ingest:main"
-llm-wiki-lint-okf = "llm_wiki.knowledge.lint_okf:main"
 llm-wiki-query = "llm_wiki.knowledge.query:main"
 llm-wiki-search = "llm_wiki.search_index:main"
 
