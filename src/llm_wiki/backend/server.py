@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-llm-wiki Web 后端(FastAPI)
+llm-wiki 对话后端(FastAPI,chat 分支:仅 /api/chat/*,无前端页面)
 
     启动:
     pip install -r requirements.txt
     uvicorn --app-dir src llm_wiki.backend.server:app --reload --port 8000
-    # 浏览器打开 http://127.0.0.1:8000/
 """
 
 from contextlib import asynccontextmanager
@@ -15,9 +14,9 @@ from fastapi import FastAPI
 from llm_wiki import search_index
 from llm_wiki.common import storage_config
 
-from .api import chat, eval, graph, ingest, knowledge, search, static_pages
+from .api import chat
 from .core.app_logging import LOG_DIR, logger
-from .core.config import FRONTEND_DIR, ROOT
+from .core.config import ROOT
 from .core.middleware import request_logging_middleware
 from .core.response import register_exception_handlers
 
@@ -30,7 +29,7 @@ def build_search_index() -> None:
         生产里若知识已直接写入数据库、不以文件为源,务必设为 false,避免删库重建。
       - AC 预热只从库里现有的 t_case_signatures 读取并编译,不写不删,因此无论是否 reindex 都执行。
     """
-    logger.info("server.startup log_dir=%s root=%s frontend=%s", LOG_DIR, ROOT, FRONTEND_DIR)
+    logger.info("server.startup log_dir=%s root=%s", LOG_DIR, ROOT)
     try:
         backend = search_index.get_backend()
         if not backend.available():
@@ -62,11 +61,4 @@ app = FastAPI(title="llm-wiki", lifespan=lifespan)
 app.middleware("http")(request_logging_middleware)
 register_exception_handlers(app)
 
-app.include_router(ingest.router)
-app.include_router(knowledge.router)
-app.include_router(search.router)
-app.include_router(eval.router)
-app.include_router(graph.router)
 app.include_router(chat.router)
-app.include_router(static_pages.router)
-static_pages.mount_static(app)

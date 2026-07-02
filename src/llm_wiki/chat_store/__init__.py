@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """对话(Agent)运营数据持久化入口。
 
-默认 SQLite(db/chat.db);配置 storage.backend=mysql 后切到 MySQL。两后端共享
-base.BaseChatStore 的 CRUD 编排,只在连接/建表/迁移上分方言(sqlite_store / mysql_store)。
+chat 分支:固定使用 MySQL(mysql_store),不提供 SQLite。CRUD 编排在
+base.BaseChatStore,方言层只负责连接/建表/迁移。
 
 可单独排障:
     python -m llm_wiki.chat_store stats
@@ -13,12 +13,9 @@ from __future__ import annotations
 import logging
 import sys
 
-from llm_wiki.common import storage_config
-
 from .base import BaseChatStore
 from .common import MessageMetrics, logger
 from .mysql_store import MySQLChatStore
-from .sqlite_store import SqliteChatStore
 
 __all__ = [
     "MessageMetrics",
@@ -41,11 +38,10 @@ _stores: dict = {}
 
 
 def _backend() -> BaseChatStore:
-    """按当前配置返回(并缓存)对应方言的 store 实例。"""
-    name = storage_config.storage_backend()
-    if name not in _stores:
-        _stores[name] = MySQLChatStore() if name == "mysql" else SqliteChatStore()
-    return _stores[name]
+    """返回(并缓存)MySQL store 实例;chat 分支只支持 MySQL。"""
+    if "mysql" not in _stores:
+        _stores["mysql"] = MySQLChatStore()
+    return _stores["mysql"]
 
 
 def create_session(title: str = "新会话", user_id: str | None = None, source_code: str = "web") -> dict:
@@ -113,7 +109,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     cmd = sys.argv[1] if len(sys.argv) > 1 else "stats"
     if cmd == "stats":
-        logger.info("chat_store backend=%s stats=%s", storage_config.storage_backend(), stats())
+        logger.info("chat_store backend=mysql stats=%s", stats())
     else:
         logger.info("用法: python -m llm_wiki.chat_store stats")
 
