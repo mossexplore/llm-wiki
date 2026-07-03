@@ -46,26 +46,32 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     backend = get_backend()
     cmd = sys.argv[1] if len(sys.argv) > 1 else "stats"
-    if cmd == "reindex":
-        n = backend.reindex_all()
-        logger.info("已从 wiki/cases/ 重建索引: %s 条案例 -> %s", n, backend.label())
-    elif cmd == "search":
-        if len(sys.argv) < 3:
-            sys.exit('用法: python -m llm_wiki.search_index search "报错文本"')
-        logger.info(json.dumps(backend.search(sys.argv[2]), ensure_ascii=False, indent=2))
-    elif cmd == "stats":
-        if not backend.available():
-            sys.exit("当前检索索引后端不可用;query.py 会回退到文件扫描。")
-        stats = backend.stats()
-        logger.info(
-            "backend=%s\nDB=%s\ncases=%s signatures=%s",
-            stats["backend"],
-            stats["db"],
-            stats["cases"],
-            stats["signatures"],
-        )
-    else:
-        sys.exit("用法: python -m llm_wiki.search_index [reindex|search <text>|stats]")
+    try:
+        if cmd == "reindex":
+            n = backend.reindex_all()
+            logger.info("已从 wiki/cases/ 重建索引: %s 条案例 -> %s", n, backend.label())
+        elif cmd == "search":
+            if len(sys.argv) < 3:
+                sys.exit('用法: python -m llm_wiki.search_index search "报错文本"')
+            logger.info(json.dumps(backend.search(sys.argv[2]), ensure_ascii=False, indent=2))
+        elif cmd == "stats":
+            if not backend.available():
+                sys.exit("当前检索索引后端不可用;query.py 会回退到文件扫描。")
+            stats = backend.stats()
+            logger.info(
+                "backend=%s\nDB=%s\ncases=%s signatures=%s",
+                stats["backend"],
+                stats["db"],
+                stats["cases"],
+                stats["signatures"],
+            )
+        else:
+            sys.exit("用法: python -m llm_wiki.search_index [reindex|search <text>|stats]")
+    except SystemExit:
+        raise
+    except Exception as exc:
+        logger.exception("search_index.cli.error cmd=%s", cmd)
+        sys.exit(f"检索索引命令执行失败: {exc.__class__.__name__}")
 
 
 if __name__ == "__main__":

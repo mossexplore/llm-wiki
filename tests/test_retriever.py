@@ -59,3 +59,35 @@ def test_wiki_retriever_falls_back_to_llm_when_database_context_missing(monkeypa
     decision = WikiRetriever().retrieve("报错")
 
     assert decision == {"source": "llm", "mode": "none", "elapsed_ms": 3, "refs": [], "context": []}
+
+
+def test_wiki_retriever_falls_back_to_llm_when_search_fails(monkeypatch):
+    def fake_search(_text):
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(query, "search", fake_search)
+
+    decision = WikiRetriever().retrieve("报错")
+
+    assert decision == {"source": "llm", "mode": "none", "elapsed_ms": 0, "refs": [], "context": []}
+
+
+def test_wiki_retriever_falls_back_to_llm_when_context_lookup_fails(monkeypatch):
+    monkeypatch.setattr(
+        query,
+        "search",
+        lambda _text: {
+            "mode": "exact",
+            "elapsed_ms": 5,
+            "hits": [{"file": "wiki/cases/db.md", "title": "数据库案例"}],
+        },
+    )
+
+    def fake_get_contexts(_files):
+        raise RuntimeError("context unavailable")
+
+    monkeypatch.setattr(query, "get_contexts", fake_get_contexts)
+
+    decision = WikiRetriever().retrieve("报错")
+
+    assert decision == {"source": "llm", "mode": "none", "elapsed_ms": 5, "refs": [], "context": []}
