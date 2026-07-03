@@ -48,10 +48,6 @@ class EvalRunReq(BaseModel):
 
 
 class SessionScopeReq(BaseModel):
-    """读取/删除类操作的统一请求体:可选 user_id 用于按用户隔离。
-
-    部署环境强制 POST,原先用 query 参数 user_id 的 GET/DELETE 端点改用本体。"""
-
     user_id: Optional[str] = None
 
 

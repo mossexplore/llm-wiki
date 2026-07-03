@@ -18,10 +18,9 @@ import logging
 import sys
 
 from llm_wiki.common import storage_config
-
-from .common import SearchBackend, case_from_file, exact_signatures, logger
-from .mysql_backend import MySQLSearch
-from .sqlite_backend import SqliteSearch
+from llm_wiki.search_index.common import SearchBackend, case_from_file, exact_signatures, logger
+from llm_wiki.search_index.mysql_backend import MySQLSearch
+from llm_wiki.search_index.sqlite_backend import SqliteSearch
 
 # case_from_file / exact_signatures 在此聚合再导出,供 query.py、search_sync 复用。
 __all__ = ["SearchBackend", "case_from_file", "exact_signatures", "logger", "get_backend", "make_backend"]

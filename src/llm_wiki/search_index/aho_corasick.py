@@ -17,9 +17,9 @@ class Automaton:
     """多模式串自动机:add() 加模式 → build() 定型 → iter_matches() 扫文本取命中模式集合。"""
 
     def __init__(self) -> None:
-        self._goto: list[dict] = [{}]   # 节点 -> {字符: 子节点};节点 0 是 root
-        self._fail: list[int] = [0]     # 节点 -> 失配指针
-        self._out: list[list] = [[]]    # 节点 -> 在此结束的模式串列表
+        self._goto: list[dict] = [{}]  # 节点 -> {字符: 子节点};节点 0 是 root
+        self._fail: list[int] = [0]  # 节点 -> 失配指针
+        self._out: list[list] = [[]]  # 节点 -> 在此结束的模式串列表
         self._built = False
 
     def add(self, pattern: str) -> None:

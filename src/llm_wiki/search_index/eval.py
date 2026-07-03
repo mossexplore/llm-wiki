@@ -141,30 +141,32 @@ def _q(query, expected, kind):
 QUERIES = [
     _q(
         "线上报错 HikariPool-1 - Connection is not available, request timed out after 30007ms",
-        "hikari-pool-timeout", "exact",
+        "hikari-pool-timeout",
+        "exact",
     ),
     _q("Out of memory: Killed process 2731 (java)", "container-oom-killed", "exact"),
     _q(
         "nginx 日志:upstream prematurely closed connection while reading response header",
-        "nginx-upstream-502", "exact",
+        "nginx-upstream-502",
+        "exact",
     ),
     _q(
         "caused by redis.clients.jedis.exceptions.JedisConnectionException: Read timed out",
-        "redis-read-timeout", "exact",
+        "redis-read-timeout",
+        "exact",
     ),
     _q("WARN Attempt to heartbeat failed since group is rebalancing", "kafka-consumer-rebalance", "exact"),
     _q("write failed: No space left on device (ENOSPC)", "disk-no-space", "exact"),
     _q("javax.net.ssl: PKIX path validation failed certificate expired", "ssl-cert-expired", "exact"),
     _q(
         "safepoint: Total time for which application threads were stopped: 4.83s",
-        "jvm-long-gc-pause", "exact",
+        "jvm-long-gc-pause",
+        "exact",
     ),
-
     _q("数据库连接池被慢查询占满,订单接口大量超时报错", "hikari-pool-timeout", "lexical"),
     _q("支付服务容器内存超限反复重启 OOMKilled", "container-oom-killed", "lexical"),
     _q("Kafka 消费组一直 rebalance,消费速率掉零", "kafka-consumer-rebalance", "lexical"),
     _q("磁盘分区写满,应用无法写日志和落库", "disk-no-space", "lexical"),
-
     _q("接口偶发性整批失败返回 500,是不是连接不够用了", "hikari-pool-timeout", "semantic"),
     _q("服务进程被系统杀掉,疑似吃内存太多", "container-oom-killed", "semantic"),
     _q("网关时不时报错,后端却看不到异常,连接像是被提前断开", "nginx-upstream-502", "semantic"),
@@ -259,16 +261,18 @@ def run_eval(k: int = K) -> dict:
 
 def _print_report(report) -> None:
     k = report["k"]
-    print(f"\n检索评测基线  (k={k}, 语料 {report.get('corpus_size', len(CORPUS))} 案例, "
-          f"查询 {report.get('query_count', len(QUERIES))} 条, 后端 {report.get('backend', '?')})")
+    print(
+        f"\n检索评测基线  (k={k}, 语料 {report.get('corpus_size', len(CORPUS))} 案例, "
+        f"查询 {report.get('query_count', len(QUERIES))} 条, 后端 {report.get('backend', '?')})"
+    )
     print("-" * 60)
-    print(f"{'分组':<10}{'n':>4}{'recall@1':>11}{'recall@'+str(k):>11}{'MRR':>9}")
+    print(f"{'分组':<10}{'n':>4}{'recall@1':>11}{'recall@' + str(k):>11}{'MRR':>9}")
     for kind in KINDS:
         a = report["by_kind"][kind]
-        print(f"{kind:<10}{a['n']:>4}{a['recall@1']:>11.2f}{a['recall@'+str(k)]:>11.2f}{a['mrr']:>9.2f}")
+        print(f"{kind:<10}{a['n']:>4}{a['recall@1']:>11.2f}{a['recall@' + str(k)]:>11.2f}{a['mrr']:>9.2f}")
     o = report["overall"]
     print("-" * 60)
-    print(f"{'overall':<10}{o['n']:>4}{o['recall@1']:>11.2f}{o['recall@'+str(k)]:>11.2f}{o['mrr']:>9.2f}")
+    print(f"{'overall':<10}{o['n']:>4}{o['recall@1']:>11.2f}{o['recall@' + str(k)]:>11.2f}{o['mrr']:>9.2f}")
     modes = report.get("modes") or {}
     print("命中模式分布:", ", ".join(f"{m}={n}" for m, n in sorted(modes.items())))
     miss = [r for r in report["rows"] if not r["hit_at_k"]]

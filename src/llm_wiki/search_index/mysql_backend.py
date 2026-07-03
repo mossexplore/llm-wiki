@@ -33,7 +33,7 @@ class MySQLSearch(SearchBackend):
         self._ok = None
         self._built = False
         self._matcher: ExactMatcher | None = None  # 精确命中 AC 自动机
-        self._matcher_dirty = True                 # 索引变更后置位,下次 search 惰性重建
+        self._matcher_dirty = True  # 索引变更后置位,下次 search 惰性重建
 
     def label(self) -> str:
         return get_mysql_label()
@@ -139,9 +139,9 @@ class MySQLSearch(SearchBackend):
     def _ensure_matcher(self, conn) -> ExactMatcher:
         """惰性构建精确命中 AC 自动机;索引未变则复用,变更后(dirty)从 MySQL 表整体重建。"""
         if self._matcher is None or self._matcher_dirty:
-            rows = conn.execute(
-                _sql_text("SELECT case_id, signature FROM t_case_signatures")
-            ).mappings().all()
+            rows = (
+                conn.execute(_sql_text("SELECT case_id, signature FROM t_case_signatures")).mappings().all()
+            )
             self._matcher = ExactMatcher.from_rows((r["case_id"], r["signature"]) for r in rows)
             self._matcher_dirty = False
         return self._matcher

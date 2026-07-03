@@ -28,7 +28,7 @@ class SqliteSearch(SearchBackend):
         self.db_path = pathlib.Path(db_path)
         self._ok = None
         self._matcher: ExactMatcher | None = None  # 精确命中 AC 自动机
-        self._matcher_dirty = True                 # 索引变更后置位,下次 search 惰性重建
+        self._matcher_dirty = True  # 索引变更后置位,下次 search 惰性重建
 
     def _connect(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

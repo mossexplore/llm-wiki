@@ -13,12 +13,11 @@ from __future__ import annotations
 import logging
 import sys
 
+from llm_wiki.chat_store.base import BaseChatStore
+from llm_wiki.chat_store.common import MessageMetrics, logger
+from llm_wiki.chat_store.mysql_store import MySQLChatStore
+from llm_wiki.chat_store.sqlite_store import SqliteChatStore
 from llm_wiki.common import storage_config
-
-from .base import BaseChatStore
-from .common import MessageMetrics, logger
-from .mysql_store import MySQLChatStore
-from .sqlite_store import SqliteChatStore
 
 __all__ = [
     "MessageMetrics",
