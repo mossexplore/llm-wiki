@@ -38,7 +38,11 @@ def split_frontmatter(text: str) -> tuple:
 
 def read_doc(path: pathlib.Path) -> tuple:
     """读取文件并切分 frontmatter,返回 ``(fm_dict, body)``。"""
-    return split_frontmatter(path.read_text(encoding="utf-8"))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise OSError(f"读取 Markdown 案例失败: {path}") from exc
+    return split_frontmatter(text)
 
 
 def section(body: str, title: str) -> str:

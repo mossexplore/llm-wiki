@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from llm_wiki.common.markdown_case import (
     annotate,
     normalize_json_text,
+    read_doc,
     section,
     split_frontmatter,
 )
@@ -37,6 +40,15 @@ def test_split_frontmatter_no_frontmatter():
 def test_split_frontmatter_malformed_yaml_is_tolerant():
     fm, _ = split_frontmatter("---\n: : : bad\n---\nbody")
     assert fm == {}
+
+
+def test_read_doc_wraps_io_errors_with_path(tmp_path):
+    missing = tmp_path / "missing.md"
+
+    with pytest.raises(OSError, match="missing.md") as exc:
+        read_doc(missing)
+
+    assert isinstance(exc.value.__cause__, OSError)
 
 
 def test_section_extracts_until_next_heading():

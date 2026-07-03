@@ -32,7 +32,11 @@ def load_cases():
     """读取 wiki/cases/ 下所有案例(含 _drafts/),解析 frontmatter + 正文。"""
     cases = []
     for path in sorted(CASES_DIR.rglob("*.md")):
-        fm, body = read_doc(path)
+        try:
+            fm, body = read_doc(path)
+        except Exception:
+            logger.exception("query.load_cases.read_failed file=%s", path)
+            continue
         if not fm:
             continue
         sigs = fm.get("signatures") or []

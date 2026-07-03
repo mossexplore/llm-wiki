@@ -96,6 +96,23 @@ def test_stream_langchain_chunks_parses_content_and_message_content():
     assert list(agent.stream_langchain_chunks(chunks, model="test")) == ["你", "好", "呀"]
 
 
+def test_stream_messages_logs_and_reraises_create_error(monkeypatch, caplog):
+    class _Completions:
+        def create(self, **_kwargs):
+            raise RuntimeError("create failed")
+
+    class _Client:
+        chat = _Obj(completions=_Completions())
+
+    monkeypatch.setattr(agent, "client_and_model", lambda _section: (_Client(), "test-model"))
+    monkeypatch.setattr(agent, "_chat_thinking_enabled", lambda: True)
+
+    with pytest.raises(RuntimeError, match="create failed"):
+        list(agent.stream_messages([{"role": "user", "content": "hi"}]))
+
+    assert "agent.chat.stream_create_failed model=test-model" in caplog.text
+
+
 def test_build_answer_messages_compatible_rejects_unknown_format():
     with pytest.raises(ValueError):
         agent.build_answer_messages_compatible("问题", {"source": "llm"}, message_format="list")

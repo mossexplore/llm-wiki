@@ -3,11 +3,11 @@
 llm.py — LLM 接入层:config.yaml 配置段加载 + OpenAI 客户端构建。
 
 这是对话与入库共用的底座,只负责「怎么连大模型」,不掺任何 wiki/检索/入库逻辑:
-  - load_config(section)      读取并合并某个配置段(openai 为基底,其它段覆盖非空字段)。
+  - load_config(section)      读取并合并某个配置段(openai 为基底,其它段覆盖非 None 字段)。
   - client_and_model(section) 懒加载并缓存 OpenAI 客户端 + model 名。
 
 差异化配置:写入知识(抽取)默认用 `openai` 段,对话用 `chat` 段。非 openai 段以 `openai`
-为基底,再用本段的非空字段覆盖 —— 只需在 `chat` 里写要改的项(如只换 model),其余自动继承。
+为基底,再用本段的非 None 字段覆盖 —— 只需在 `chat` 里写要改的项(如只换 model),其余自动继承。
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def load_config(section: str = "openai") -> dict:
     """读取本地 config.yaml 的某个配置段:api_key / base_url / model。
 
     差异化配置:写入知识(抽取)默认用 `openai` 段,对话用 `chat` 段。非 openai 段以
-    `openai` 为基底,再用本段的非空字段覆盖 —— 这样只需在 `chat` 里写要改的项
+    `openai` 为基底,再用本段的非 None 字段覆盖 —— 这样只需在 `chat` 里写要改的项
     (如只换 model),其余自动继承 openai;`chat` 段缺省时则完全等同 openai(向后兼容)。
 
     缺失时抛 RuntimeError(普通异常,便于 Web 端 except Exception 捕获并流式回传);
@@ -70,7 +70,7 @@ def load_config(section: str = "openai") -> dict:
     cfg = dict(data.get("openai") or {})
     if section != "openai":
         override = data.get(section) or {}
-        cfg.update({k: v for k, v in override.items() if v not in (None, "")})
+        cfg.update({k: v for k, v in override.items() if v is not None})
     if not cfg.get("api_key"):
         raise RuntimeError(f"配置文件 {CONFIG_PATH} 缺少 {section}.api_key(或 openai.api_key)。")
     return cfg

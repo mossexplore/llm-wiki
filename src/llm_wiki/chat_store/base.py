@@ -71,9 +71,11 @@ class BaseChatStore:
         with self._tx() as c:
             return c.all(
                 f"""SELECT s.id, s.user_id, s.source_code, s.title, s.created_at, s.updated_at,
-                          (SELECT count(*) FROM t_chat_messages m WHERE m.session_id = s.id) AS message_count
+                          COUNT(m.id) AS message_count
                    FROM t_chat_sessions s
+                   LEFT JOIN t_chat_messages m ON m.session_id = s.id
                    {where}
+                   GROUP BY s.id, s.user_id, s.source_code, s.title, s.created_at, s.updated_at
                    ORDER BY s.updated_at DESC""",
                 {"user_id": user_id} if user_id else None,
             )

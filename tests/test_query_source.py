@@ -47,3 +47,24 @@ signatures:
     assert res["mode"] == "exact"
     assert res["source"] == "files"
     assert res["hits"][0]["file"] == "wiki/cases/hikari.md"
+
+
+def test_load_cases_skips_files_that_fail_to_read(tmp_path, monkeypatch):
+    cases_dir = tmp_path / "wiki" / "cases"
+    cases_dir.mkdir(parents=True)
+    bad = cases_dir / "bad.md"
+    good = cases_dir / "good.md"
+    bad.write_text("bad", encoding="utf-8")
+    good.write_text("good", encoding="utf-8")
+
+    def fake_read_doc(path):
+        if path == bad:
+            raise OSError("cannot read")
+        return {"title": "good", "signatures": ["GOOD"]}, "body"
+
+    monkeypatch.setattr(query, "CASES_DIR", cases_dir)
+    monkeypatch.setattr(query, "read_doc", fake_read_doc)
+
+    cases = query.load_cases()
+
+    assert [case["title"] for case in cases] == ["good"]

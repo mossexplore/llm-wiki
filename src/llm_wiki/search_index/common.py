@@ -34,9 +34,11 @@ __all__ = [
     "order_exact_case_ids",
 ]
 
-# 检索分词:英文词(>=3 字母)、数字错误码(>=3 位)、连续中文。两个后端共用,
+# 检索分词:英文词(>=3 字母)、数字错误码(>=3 位)、连续 CJK 统一表意文字。两个后端共用,
 # 之后各自再做后处理(SQLite 切 trigram + 引号,MySQL 截断 + 空格拼)。
-_SEARCH_TOKEN_RE = re.compile(r"[A-Za-z]{3,}|\d{3,}|[一-鿿]+")
+_CJK_FIRST = "\u4e00"
+_CJK_LAST = "\u9fff"
+_SEARCH_TOKEN_RE = re.compile(f"[A-Za-z]{{3,}}|\\d{{3,}}|[{_CJK_FIRST}-{_CJK_LAST}]+")
 
 
 def iter_search_tokens(log: str) -> list:
@@ -46,7 +48,7 @@ def iter_search_tokens(log: str) -> list:
 
 def is_cjk(token: str) -> bool:
     """token 是否以中日韩统一表意文字开头(用于区分中英文后处理)。"""
-    return bool(token) and "一" <= token[0] <= "鿿"
+    return bool(token) and _CJK_FIRST <= token[0] <= _CJK_LAST
 
 
 CASES_DIR = ROOT / "wiki" / "cases"
@@ -121,7 +123,7 @@ def case_from_file(path: pathlib.Path) -> dict | None:
     if not text.startswith("---"):
         return None
     fm, body = split_frontmatter(text)
-    if not fm:
+    if not isinstance(fm, dict) or not fm:
         return None
     sigs = fm.get("signatures") or []
     if isinstance(sigs, str):

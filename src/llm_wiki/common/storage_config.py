@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 import yaml
 
 from llm_wiki.common.paths import CONFIG_PATH
+
+logger = logging.getLogger("log_wiki.storage_config")
 
 
 def _config_data() -> dict:
@@ -40,6 +43,14 @@ def _as_bool(value, default: bool) -> bool:
     raise RuntimeError(f"无法解析布尔配置值: {value!r}")
 
 
+def _bool_config(name: str, value, default: bool) -> bool:
+    try:
+        return _as_bool(value, default)
+    except RuntimeError as exc:
+        logger.warning("storage.bool_config_invalid name=%s default=%s error=%s", name, default, exc)
+        return default
+
+
 def auto_reindex_on_startup() -> bool:
     """返回启动时是否自动从 wiki/cases/ 整库重建检索索引;缺省为 false。"""
     data = _config_data()
@@ -47,7 +58,7 @@ def auto_reindex_on_startup() -> bool:
     value = os.environ.get("LOG_WIKI_AUTO_REINDEX_ON_STARTUP")
     if value in (None, ""):
         value = storage.get("auto_reindex_on_startup")
-    return _as_bool(value, False)
+    return _bool_config("auto_reindex_on_startup", value, False)
 
 
 def local_search() -> bool:
@@ -61,7 +72,7 @@ def local_search() -> bool:
     value = os.environ.get("LOG_WIKI_LOCAL_SEARCH")
     if value in (None, ""):
         value = storage.get("local_search")
-    return _as_bool(value, True)
+    return _bool_config("local_search", value, True)
 
 
 def mysql_config() -> dict:

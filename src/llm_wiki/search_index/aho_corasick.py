@@ -56,7 +56,7 @@ class Automaton:
                 self._fail[nxt] = 0 if target == nxt else target
                 # 把失配节点的输出并进来:走到 nxt 时,其所有后缀模式也一并命中
                 if self._out[self._fail[nxt]]:
-                    self._out[nxt] = self._out[nxt] + self._out[self._fail[nxt]]
+                    self._out[nxt].extend(self._out[self._fail[nxt]])
         self._built = True
 
     def iter_matches(self, text: str) -> set:

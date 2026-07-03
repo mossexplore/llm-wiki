@@ -6,11 +6,11 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from llm_wiki.backend.core.error_codes import ErrorCode, raise_api_error
+from llm_wiki.backend.core.error_codes import ErrorCode, raise_api_error, stream_error_text
 from llm_wiki.backend.core.response import (
     envelope,
     register_exception_handlers,
@@ -52,6 +52,10 @@ def client():
     def boom():
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
 
+    @app.get("/empty-description")
+    def empty_description():
+        raise HTTPException(status_code=400, detail={"code": 49999, "description": ""})
+
     @app.post("/need-body")
     def need_body(_body: _Body):
         return success()
@@ -81,6 +85,14 @@ def test_api_error_keeps_http_status_and_code(client):
     assert body["result"]["data"] == {}
 
 
+def test_structured_http_error_preserves_empty_description(client):
+    r = client.get("/empty-description")
+
+    assert r.status_code == 400
+    assert r.json()["result"]["code"] == 49999
+    assert r.json()["result"]["des"] == ""
+
+
 def test_validation_error_wrapped_as_param_invalid(client):
     r = client.post("/need-body", json={})  # 缺 name 字段
     assert r.status_code == ErrorCode.PARAM_INVALID.http_status
@@ -93,3 +105,11 @@ def test_unhandled_exception_is_generic(client):
     body = r.json()
     assert body["result"]["code"] == ErrorCode.INTERNAL_ERROR.code
     assert "内部细节" not in body["result"]["des"]  # 原始异常不外泄
+
+
+def test_stream_error_text_does_not_expose_request_id():
+    text = stream_error_text("req-secret")
+
+    assert text == ErrorCode.INTERNAL_ERROR.description
+    assert "req-secret" not in text
+    assert "request_id" not in text

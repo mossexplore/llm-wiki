@@ -58,7 +58,6 @@ def stream_error_text(request_id: str | None = None) -> str:
     """流式接口对外的通用错误文案。
 
     原始异常只进日志(logger.exception),绝不回传给客户端,避免泄漏 base_url、
-    网关报文等内部信息;带上 request_id 便于用户报障时定位。
+    网关报文、request_id 等内部信息。
     """
-    base = ErrorCode.INTERNAL_ERROR.description
-    return f"{base}(request_id={request_id})" if request_id else base
+    return ErrorCode.INTERNAL_ERROR.description
