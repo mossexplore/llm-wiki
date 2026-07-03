@@ -55,7 +55,11 @@ class WikiRetriever:
         # 惰性导入:只在真正检索时才拉起 query/search_index,纯对话(NullRetriever)不受牵连。
         from llm_wiki.knowledge import query
 
-        res = query.search(text)
+        try:
+            res = query.search(text)
+        except Exception:
+            logger.exception("retriever.search_failed")
+            return llm_decision()
         mode = res.get("mode", "none")
         hits = res.get("hits", [])
         elapsed = res.get("elapsed_ms", 0)
@@ -72,7 +76,11 @@ class WikiRetriever:
                     picked_files.append({"file": h["file"], "title": h.get("title", "")})
 
         if picked_files:
-            context = query.get_contexts([p["file"] for p in picked_files])
+            try:
+                context = query.get_contexts([p["file"] for p in picked_files])
+            except Exception:
+                logger.exception("retriever.contexts_failed mode=%s files=%s", mode, picked_files)
+                return llm_decision(elapsed)
             if context:
                 refs = [{"file": c["file"], "title": c["title"]} for c in context]
                 return {
