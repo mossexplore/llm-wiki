@@ -37,7 +37,8 @@ def llm_decision(elapsed_ms: int = 0) -> dict:
 class Retriever(Protocol):
     """对话检索接口:输入用户文本,返回本轮决策字典。"""
 
-    def retrieve(self, text: str) -> dict: ...
+    def retrieve(self, text: str) -> dict:
+        ...
 
 
 class NullRetriever:

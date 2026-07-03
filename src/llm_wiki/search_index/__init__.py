@@ -16,8 +16,8 @@ import json
 import logging
 import sys
 
-from .common import SearchBackend, case_from_file, exact_signatures, logger
-from .mysql_backend import MySQLSearch
+from llm_wiki.search_index.common import SearchBackend, case_from_file, exact_signatures, logger
+from llm_wiki.search_index.mysql_backend import MySQLSearch
 
 # case_from_file / exact_signatures 在此聚合再导出,供 query.py 复用。
 __all__ = ["SearchBackend", "case_from_file", "exact_signatures", "logger", "get_backend", "make_backend"]

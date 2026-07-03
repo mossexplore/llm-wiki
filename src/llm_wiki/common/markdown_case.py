@@ -68,5 +68,7 @@ def normalize_json_text(text: str) -> str:
         first = txt.find("{")
         last = txt.rfind("}")
         if first != -1 and last > first:
-            txt = txt[first : last + 1].strip()
+            start = first
+            end = last + 1
+            txt = txt[start:end].strip()
     return txt

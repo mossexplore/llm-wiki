@@ -51,7 +51,7 @@ def build_search_index() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """应用生命周期:启动时按需重建检索索引(替代已弃用的 on_event）。"""
     build_search_index()
     yield
