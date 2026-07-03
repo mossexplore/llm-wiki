@@ -109,7 +109,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     cmd = sys.argv[1] if len(sys.argv) > 1 else "stats"
     if cmd == "stats":
-        logger.info("chat_store backend=mysql stats=%s", stats())
+        stats()
+        logger.info("chat_store backend=mysql stats_checked")
     else:
         logger.info("用法: python -m llm_wiki.chat_store stats")
 

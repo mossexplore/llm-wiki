@@ -262,7 +262,14 @@ def stream_messages(messages):
     }
     if not thinking_enabled:
         request_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
-    stream = client.chat.completions.create(**request_kwargs)
+    try:
+        stream = client.chat.completions.create(**request_kwargs)
+    except Exception:
+        logger.exception(
+            f"agent.chat.stream_create_failed model={model} "
+            f"elapsed_ms={int((time.perf_counter() - started) * 1000)}"
+        )
+        raise
     logger.info(
         f"agent.chat.stream_created model={model} create_ms={int((time.perf_counter() - started) * 1000)}"
     )

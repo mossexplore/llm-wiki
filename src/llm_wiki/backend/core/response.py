@@ -68,8 +68,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _on_http_exception(request: Request, exc: StarletteHTTPException):
         detail = exc.detail
         if isinstance(detail, dict) and "code" in detail:  # raise_api_error 抛出的结构化错误
+            fallback = ErrorCode.INTERNAL_ERROR
             code = detail["code"]
-            des = detail.get("description") or ErrorCode.INTERNAL_ERROR.description
+            des = detail.get("description", fallback.description)
         else:  # 框架/路由抛出的普通 HTTPException
             fallback = ErrorCode.PARAM_INVALID if exc.status_code < 500 else ErrorCode.INTERNAL_ERROR
             code = fallback.code

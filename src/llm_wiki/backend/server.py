@@ -38,8 +38,7 @@ def build_search_index() -> None:
         if storage_config.auto_reindex_on_startup():
             n = backend.reindex_all()
             logger.info(
-                f"search_index.reindex_all built={n} backend={type(backend).__name__} "
-                f"db={backend.label()}"
+                f"search_index.reindex_all built={n} backend={type(backend).__name__} db={backend.label()}"
             )
         else:
             logger.info("search_index.reindex_all skipped by storage.auto_reindex_on_startup=false")

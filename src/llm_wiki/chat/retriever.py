@@ -38,7 +38,7 @@ class Retriever(Protocol):
     """对话检索接口:输入用户文本,返回本轮决策字典。"""
 
     def retrieve(self, text: str) -> dict:
-        ...
+        raise NotImplementedError
 
 
 class NullRetriever:
@@ -57,7 +57,7 @@ class WikiRetriever:
 
         res = query.search(text)
         mode = res.get("mode", "none")
-        hits = res.get("hits", []) or []
+        hits = res.get("hits", [])
         elapsed = res.get("elapsed_ms", 0)
 
         picked_files: list[dict] = []

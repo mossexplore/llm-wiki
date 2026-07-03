@@ -41,6 +41,17 @@ def test_list_sessions_post_without_body(client):
     assert len(_data(response)["items"]) == 1
 
 
+def test_list_sessions_includes_message_count(client):
+    session = chat_store.create_session("s1", user_id="u1")
+    chat_store.add_message(session["id"], "user", "hello", user_id="u1")
+    chat_store.add_message(session["id"], "assistant", "hi", user_id="u1")
+
+    response = client.post("/api/chat/sessions/list", json={"user_id": "u1"})
+
+    assert response.status_code == 200
+    assert _data(response)["items"][0]["message_count"] == 2
+
+
 def test_list_sessions_post_scopes_by_user_id_in_body(client):
     chat_store.create_session("s1", user_id="u1")
 

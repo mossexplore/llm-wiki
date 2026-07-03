@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from contextlib import contextmanager
 
 from llm_wiki.common.mysql_client import (
@@ -17,6 +18,8 @@ from llm_wiki.common.mysql_client import (
 
 from .base import BaseChatStore
 from .common import MYSQL_SCHEMA_PATH, logger, now
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 CHAT_COLUMN_DEFINITIONS = {
     "t_chat_sessions": {
@@ -32,6 +35,12 @@ CHAT_COLUMN_DEFINITIONS = {
         "user_id": "VARCHAR(64) COMMENT '用户 id, 标识该反馈归属的用户'",
     },
 }
+
+
+def _quote_identifier(identifier: str) -> str:
+    if not _IDENTIFIER_RE.fullmatch(identifier):
+        raise ValueError(f"invalid SQL identifier: {identifier!r}")
+    return f"`{identifier}`"
 
 
 class _MySQLConn:
@@ -125,16 +134,31 @@ def _add_index_if_missing(conn, table: str, index: str, column: str) -> None:
         .one()
     )
     if row["n"] == 0:
-        conn.execute(_sql_text(f"ALTER TABLE {table} ADD INDEX {index} ({column})"))
+        conn.execute(
+            _sql_text(
+                f"ALTER TABLE {_quote_identifier(table)} "
+                f"ADD INDEX {_quote_identifier(index)} ({_quote_identifier(column)})"
+            )
+        )
 
 
 def _migrate_columns(conn) -> None:
     for table, columns in CHAT_COLUMN_DEFINITIONS.items():
         for column, definition in columns.items():
             if not _column_exists(conn, table, column):
-                conn.execute(_sql_text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+                conn.execute(
+                    _sql_text(
+                        f"ALTER TABLE {_quote_identifier(table)} "
+                        f"ADD COLUMN {_quote_identifier(column)} {definition}"
+                    )
+                )
             elif _column_varchar_length(conn, table, column) != 64:
-                conn.execute(_sql_text(f"ALTER TABLE {table} MODIFY COLUMN {column} {definition}"))
+                conn.execute(
+                    _sql_text(
+                        f"ALTER TABLE {_quote_identifier(table)} "
+                        f"MODIFY COLUMN {_quote_identifier(column)} {definition}"
+                    )
+                )
     _add_index_if_missing(conn, "t_chat_sessions", "idx_chat_sessions_user", "user_id")
     _add_index_if_missing(conn, "t_chat_sessions", "idx_chat_sessions_source", "source_code")
     _add_index_if_missing(conn, "t_chat_messages", "idx_chat_messages_user", "user_id")
