@@ -171,6 +171,42 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
         model_wait_ms = None
         model_request_start_ms = None
         prompt_stats = {"message_count": None, "char_count": None}
+        answer_persisted = False
+
+        def persist_answer(total_ms: Optional[int] = None, allow_empty: bool = False, reason: str = "done"):
+            nonlocal answer_persisted
+            if answer_persisted or (not allow_empty and not acc.strip()):
+                return None
+            elapsed_total_ms = total_ms if total_ms is not None else int((time.perf_counter() - started) * 1000)
+            saved_answer = chat_store.add_message(
+                session_id,
+                "assistant",
+                acc,
+                MessageMetrics(
+                    answer_source=source,
+                    retrieval_mode=mode,
+                    refs=refs,
+                    elapsed_ms=elapsed_total_ms,
+                    retrieval_ms=retrieval_ms,
+                    model_wait_ms=model_wait_ms,
+                    first_delta_ms=first_delta_ms,
+                    total_ms=elapsed_total_ms,
+                    message_count=prompt_stats["message_count"],
+                    prompt_chars=prompt_stats["char_count"],
+                ),
+                user_id=user_id,
+            )
+            answer_persisted = True
+            logger.info(
+                "chat.send.persist_answer session_id=%s request_id=%s reason=%s chars=%s total_ms=%s",
+                session_id,
+                request_id,
+                reason,
+                len(acc),
+                elapsed_total_ms,
+            )
+            return saved_answer
+
         try:
             yield ndjson(
                 {
@@ -267,30 +303,13 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             total_ms = int((time.perf_counter() - started) * 1000)
             if model_wait_ms is None and model_request_start_ms is not None:
                 model_wait_ms = total_ms - model_request_start_ms
-            saved = chat_store.add_message(
-                session_id,
-                "assistant",
-                acc,
-                MessageMetrics(
-                    answer_source=source,
-                    retrieval_mode=mode,
-                    refs=refs,
-                    elapsed_ms=total_ms,
-                    retrieval_ms=retrieval_ms,
-                    model_wait_ms=model_wait_ms,
-                    first_delta_ms=first_delta_ms,
-                    total_ms=total_ms,
-                    message_count=prompt_stats["message_count"],
-                    prompt_chars=prompt_stats["char_count"],
-                ),
-                user_id=user_id,
-            )
+            saved = persist_answer(total_ms, allow_empty=True, reason="done")
             yield ndjson(
                 {
                     "type": "done",
                     "request_id": request_id,
                     "session_id": session_id,
-                    "message_id": saved["id"],
+                    "message_id": saved["id"] if saved else None,
                     "source": source,
                     "mode": mode,
                     "refs": refs,
@@ -313,23 +332,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             logger.exception("chat.send.error session_id=%s request_id=%s", session_id, request_id)
             if acc.strip():
                 try:
-                    chat_store.add_message(
-                        session_id,
-                        "assistant",
-                        acc,
-                        MessageMetrics(
-                            answer_source=source,
-                            retrieval_mode=mode,
-                            refs=refs,
-                            retrieval_ms=retrieval_ms,
-                            model_wait_ms=model_wait_ms,
-                            first_delta_ms=first_delta_ms,
-                            total_ms=int((time.perf_counter() - started) * 1000),
-                            message_count=prompt_stats.get("message_count"),
-                            prompt_chars=prompt_stats.get("char_count"),
-                        ),
-                        user_id=user_id,
-                    )
+                    persist_answer(reason="error")
                 except Exception:
                     logger.exception("chat persist partial answer failed")
             yield ndjson(
@@ -341,6 +344,12 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     "error": stream_error_text(request_id),
                 }
             )
+        finally:
+            if acc.strip() and not answer_persisted:
+                try:
+                    persist_answer(reason="disconnect")
+                except Exception:
+                    logger.exception("chat persist disconnected partial answer failed")
 
     return StreamingResponse(
         gen(),

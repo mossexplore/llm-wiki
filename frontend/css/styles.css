@@ -650,6 +650,11 @@
     .src-badge.muted { background: var(--surface-3); color: var(--text-mute); }
     .chat-latency { display: inline-flex; align-items: center; gap: 5px; color: var(--text-mute); font-size: 10.5px; }
     .chat-latency .lat-dot { color: var(--text-faint); }
+    .chat-stopped {
+      display: inline-flex; align-items: center; margin: 0 0 7px;
+      color: var(--danger); background: var(--danger-soft); border-radius: var(--r-sm);
+      padding: 2px 7px; font-size: 10.5px; font-weight: 650;
+    }
     .chat-md { white-space: normal; word-break: break-word; }
     .chat-md > :first-child { margin-top: 0; }
     .chat-md > :last-child { margin-bottom: 0; }
@@ -707,7 +712,7 @@
     .feedback-type-btn.on { border-color: transparent; background: var(--danger-soft); color: var(--danger); }
     .chat-input-bar { display: flex; gap: 10px; align-items: flex-end; padding: 14px 18px; border-top: 1px solid var(--line); }
     .chat-input-bar textarea { flex: 1; resize: none; max-height: 160px; min-height: 40px; }
-    .chat-send { width: 44px; flex: none; padding: 0; height: 40px; }
+    .chat-send, .chat-stop { width: 44px; flex: none; padding: 0; height: 40px; }
 
     @media (max-width: 840px) {
       .page { padding: 24px 16px 44px; }

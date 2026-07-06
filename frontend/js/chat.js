@@ -5,9 +5,11 @@
     let chatLatencyTimer = null;
     let chatStreamAbortControllers = {};
     let chatStreamSeq = 0;
+    const STOPPED_HYDRATE_DELAYS = [350, 900, 1600, 2600, 4000, 6500];
 
     function iconChat() { return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'; }
     function iconSend() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4 20-7z"></path></svg>'; }
+    function iconStop() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>'; }
     function iconCopy() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'; }
     function iconUp() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path></svg>'; }
     function iconDown() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path></svg>'; }
@@ -415,6 +417,93 @@
       }
     }
 
+    function stopChatStream(sessionId) {
+      const streamState = getChatStream(sessionId);
+      if (!streamState || !streamState.streaming) return;
+      const partial = streamState.text || '';
+      const meta = streamState.meta || {};
+      const status = Object.assign({}, streamState.status || {}, { stage: 'stopped' });
+      const controller = chatStreamAbortControllers[sessionId];
+      delete chatStreamAbortControllers[sessionId];
+      if (controller) controller.abort();
+      stopChatLatencyTimer();
+
+      if (partial.trim() && state.chatActive === sessionId && !state.chatMessagesLoading) {
+        const stoppedMessage = {
+          role: 'assistant',
+          content: partial,
+          id: 'local-stopped-' + Date.now(),
+          answer_source: meta.source,
+          retrieval_mode: meta.mode,
+          refs: meta.refs || [],
+          retrieval_ms: status.retrieval_ms,
+          model_wait_ms: status.model_wait_ms,
+          first_delta_ms: status.first_delta_ms,
+          total_ms: status.total_ms,
+          elapsed_ms: status.elapsed_ms,
+          message_count: status.message_count,
+          prompt_chars: status.prompt_chars,
+          stopped: true
+        };
+        state.chatMessages.push(stoppedMessage);
+        scheduleStoppedMessageHydration(sessionId, stoppedMessage.id, partial, 0);
+      }
+
+      clearChatStream(sessionId);
+      if (state.chatActive === sessionId) {
+        syncActiveChatStreamState();
+        render();
+        const ta = document.getElementById('chatInput');
+        if (ta) ta.focus();
+      }
+      loadChatSessions(false);
+      showToast(partial.trim() ? '已停止生成' : '已停止请求');
+    }
+
+    function scheduleStoppedMessageHydration(sessionId, localId, partial, attempt) {
+      const delay = STOPPED_HYDRATE_DELAYS[Math.min(attempt, STOPPED_HYDRATE_DELAYS.length - 1)];
+      setTimeout(() => hydrateStoppedChatMessage(sessionId, localId, partial, attempt), delay);
+    }
+
+    function shouldRetryStoppedHydration(sessionId, localId, attempt) {
+      if (attempt >= STOPPED_HYDRATE_DELAYS.length - 1) return false;
+      if (state.chatActive !== sessionId) return false;
+      return state.chatMessages.some(m => m.id === localId && m.stopped);
+    }
+
+    async function hydrateStoppedChatMessage(sessionId, localId, partial, attempt) {
+      if (state.chatActive !== sessionId) return;
+      try {
+        const r = await fetch('/api/chat/sessions/' + encodeURIComponent(sessionId) + '/messages/list', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        const payload = await r.json();
+        if (!r.ok) return;
+        const items = apiData(payload).items || [];
+        let persistedIndex = -1;
+        items.forEach((m, idx) => {
+          const content = m.content || '';
+          if (m.role === 'assistant' && (content === partial || content.indexOf(partial) === 0)) persistedIndex = idx;
+        });
+        if (persistedIndex < 0 || state.chatActive !== sessionId) {
+          if (shouldRetryStoppedHydration(sessionId, localId, attempt)) {
+            scheduleStoppedMessageHydration(sessionId, localId, partial, attempt + 1);
+          }
+          return;
+        }
+        state.chatMessages = items.map((m, idx) => idx === persistedIndex ? Object.assign({}, m, { stopped: true }) : m);
+        syncActiveChatStreamState();
+        render();
+      } catch (_) {
+        const msg = state.chatMessages.find(m => m.id === localId);
+        if (msg) msg.stopped = true;
+        if (shouldRetryStoppedHydration(sessionId, localId, attempt)) {
+          scheduleStoppedMessageHydration(sessionId, localId, partial, attempt + 1);
+        }
+      }
+    }
+
     function abortAllChatStreams() {
       Object.keys(chatStreamAbortControllers).forEach(sessionId => {
         const controller = chatStreamAbortControllers[sessionId];
@@ -637,7 +726,7 @@
       const legacyElapsed = _num(m.elapsed_ms);
       const total = _num(m.total_ms);
       const st = {
-        stage: 'done',
+        stage: m.stopped ? 'stopped' : 'done',
         retrieval_ms: retrieval !== null ? retrieval : (total === null ? legacyElapsed : null),
         model_wait_ms: _num(m.model_wait_ms),
         first_delta_ms: _num(m.first_delta_ms),
@@ -655,6 +744,7 @@
         retrieved: '检索完成',
         generating: '请求模型',
         first_delta: '生成中',
+        stopped: '已停止',
         done: '已完成'
       };
       const bits = ['<span>' + escapeHtml(labels[st.stage] || '处理中') + '</span>'];
@@ -776,14 +866,17 @@
         '<div class="chat-avatar">' + iconChat() + '</div>' +
         '<div class="chat-bubble agent">' +
           '<div class="chat-srcline">' + srcBadge(m.answer_source, m.retrieval_mode) + (latency ? chatLatencyHtml(latency, false) : '') + '</div>' +
+          (m.stopped ? '<div class="chat-stopped mono">已停止生成</div>' : '') +
           '<div class="chat-md">' + renderMarkdown(m.content) + '</div>' +
           refsHtml +
-          (isLocal ? '' :
+          (isLocal && !m.stopped ? '' :
           '<div class="chat-acts">' +
             '<button class="chat-act" data-copy="' + encodeURIComponent(m.content) + '" title="复制">' + iconCopy() + '</button>' +
-            '<button class="chat-act' + fbUp + '" data-fb="like" data-mid="' + escapeHtml(m.id) + '" title="点赞">' + iconUp() + '</button>' +
-            '<button class="chat-act' + fbDown + '" data-fb="unlike" data-mid="' + escapeHtml(m.id) + '" title="点踩">' + iconDown() + '</button>' +
-            (m.feedback === 'unlike' && fbReason ? '<span class="chat-fb-reason" title="点踩原因">' + escapeHtml(fbReason) + '</span>' : '') +
+            (isLocal
+              ? '<span class="chat-fb-reason">反馈同步中…</span>'
+              : '<button class="chat-act' + fbUp + '" data-fb="like" data-mid="' + escapeHtml(m.id) + '" title="点赞">' + iconUp() + '</button>' +
+                '<button class="chat-act' + fbDown + '" data-fb="unlike" data-mid="' + escapeHtml(m.id) + '" title="点踩">' + iconDown() + '</button>' +
+                (m.feedback === 'unlike' && fbReason ? '<span class="chat-fb-reason" title="点踩原因">' + escapeHtml(fbReason) + '</span>' : '')) +
           '</div>') +
         '</div>' +
       '</div>';
@@ -831,7 +924,9 @@
           '</div>' +
           '<div class="chat-input-bar">' +
             '<textarea id="chatInput" class="field" placeholder="输入你的问题,Enter 发送 / Shift+Enter 换行" rows="1" ' + (activeStreaming ? 'disabled' : '') + '>' + escapeHtml(state.chatInput) + '</textarea>' +
-            '<button class="btn primary chat-send" id="chatSend" type="button" ' + (activeStreaming ? 'disabled' : '') + '>' + (activeStreaming ? iconSpin() : iconSend()) + '</button>' +
+            (activeStreaming
+              ? '<button class="btn danger chat-stop" id="chatStop" type="button" title="停止生成">' + iconStop() + '</button>'
+              : '<button class="btn primary chat-send" id="chatSend" type="button" title="发送">' + iconSend() + '</button>') +
           '</div>';
       }
 
@@ -858,6 +953,7 @@
       bindC('chatClear', clearChatSessions);
       bindC('chatEmptyNew', newChatSession);
       bindC('chatSend', sendChatMessage);
+      bindC('chatStop', () => stopChatStream(state.chatActive));
       const ta = document.getElementById('chatInput');
       if (ta) {
         ta.oninput = e => { state.chatInput = e.target.value; autoGrow(e.target); };
