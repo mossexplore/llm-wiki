@@ -269,6 +269,47 @@
       let buf = '';
       let doneMeta = null;
       let errored = '';
+      const handleEvent = async ev => {
+        if (!isCurrentChatStream(sessionId, streamToken)) {
+          await cancelChatReader(reader);
+          return false;
+        }
+        if (ev.session_id && ev.session_id !== sessionId) return true;
+        const streamState = getChatStream(sessionId);
+        if (!streamState) return true;
+        if (ev.type === 'meta') {
+          streamState.meta = { source: ev.source, mode: ev.mode, refs: ev.refs || [], retrieval_ms: ev.retrieval_ms };
+          streamState.status = Object.assign({}, streamState.status || {}, {
+            stage: 'retrieved',
+            retrieval_ms: ev.retrieval_ms,
+            elapsed_ms: ev.retrieval_ms
+          });
+          renderActiveChatStream(sessionId);
+        } else if (ev.type === 'status') {
+          streamState.status = Object.assign({}, streamState.status || {}, ev);
+          if (ev.stage === 'generating') startChatLatencyTimer(sessionId, streamToken);
+          if (ev.stage === 'first_delta' && state.chatActive === sessionId) stopChatLatencyTimer();
+          renderActiveChatStream(sessionId);
+        } else if (ev.type === 'delta') {
+          streamState.text += ev.text || '';
+          updateStreamDOM(sessionId);
+        } else if (ev.type === 'done') {
+          doneMeta = ev;
+          streamState.status = Object.assign({}, streamState.status || {}, {
+            stage: 'done',
+            retrieval_ms: ev.retrieval_ms,
+            model_start_ms: ev.model_start_ms,
+            model_wait_ms: ev.model_wait_ms,
+            first_delta_ms: ev.first_delta_ms,
+            total_ms: ev.total_ms,
+            message_count: ev.message_count,
+            prompt_chars: ev.prompt_chars
+          });
+        } else if (ev.type === 'error') {
+          errored = ev.error || '生成失败';
+        }
+        return true;
+      };
       while (true) {
         if (!isCurrentChatStream(sessionId, streamToken)) {
           await cancelChatReader(reader);
@@ -281,51 +322,28 @@
         }
         if (done) break;
         buf += decoder.decode(value, { stream: true });
+        let boundary;
+        while ((boundary = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, boundary);
+          buf = buf.slice(boundary + 2);
+          const data = block.split('\n')
+            .map(line => line.trimEnd())
+            .filter(line => line.startsWith('data:'))
+            .map(line => line.slice(5).trimStart())
+            .join('\n');
+          if (!data || data === '[DONE]') continue;
+          let ev;
+          try { ev = JSON.parse(data); } catch (_) { continue; }
+          if (!await handleEvent(ev)) return false;
+        }
         let nl;
-        while ((nl = buf.indexOf('\n')) >= 0) {
+        while (buf.indexOf('\n\n') < 0 && (nl = buf.indexOf('\n')) >= 0) {
           const line = buf.slice(0, nl).trim();
+          if (!line || line.startsWith('data:')) break;
           buf = buf.slice(nl + 1);
-          if (!line) continue;
           let ev;
           try { ev = JSON.parse(line); } catch (_) { continue; }
-          if (!isCurrentChatStream(sessionId, streamToken)) {
-            await cancelChatReader(reader);
-            return false;
-          }
-          if (ev.session_id && ev.session_id !== sessionId) continue;
-          const streamState = getChatStream(sessionId);
-          if (!streamState) continue;
-          if (ev.type === 'meta') {
-            streamState.meta = { source: ev.source, mode: ev.mode, refs: ev.refs || [], retrieval_ms: ev.retrieval_ms };
-            streamState.status = Object.assign({}, streamState.status || {}, {
-              stage: 'retrieved',
-              retrieval_ms: ev.retrieval_ms,
-              elapsed_ms: ev.retrieval_ms
-            });
-            renderActiveChatStream(sessionId);
-          } else if (ev.type === 'status') {
-            streamState.status = Object.assign({}, streamState.status || {}, ev);
-            if (ev.stage === 'generating') startChatLatencyTimer(sessionId, streamToken);
-            if (ev.stage === 'first_delta' && state.chatActive === sessionId) stopChatLatencyTimer();
-            renderActiveChatStream(sessionId);
-          } else if (ev.type === 'delta') {
-            streamState.text += ev.text || '';
-            updateStreamDOM(sessionId);
-          } else if (ev.type === 'done') {
-            doneMeta = ev;
-            streamState.status = Object.assign({}, streamState.status || {}, {
-              stage: 'done',
-              retrieval_ms: ev.retrieval_ms,
-              model_start_ms: ev.model_start_ms,
-	              model_wait_ms: ev.model_wait_ms,
-	              first_delta_ms: ev.first_delta_ms,
-	              total_ms: ev.total_ms,
-	              message_count: ev.message_count,
-	              prompt_chars: ev.prompt_chars
-	            });
-          } else if (ev.type === 'error') {
-            errored = ev.error || '生成失败';
-          }
+          if (!await handleEvent(ev)) return false;
         }
       }
       if (!isCurrentChatStream(sessionId, streamToken)) return false;

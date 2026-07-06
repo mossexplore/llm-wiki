@@ -41,7 +41,15 @@ def client(monkeypatch):
 
 
 def _events(response):
-    return [json.loads(line) for line in response.text.splitlines() if line.strip()]
+    text = response.text
+    if "data:" in text:
+        events = []
+        for block in text.split("\n\n"):
+            data = "\n".join(line[5:].lstrip() for line in block.splitlines() if line.startswith("data:"))
+            if data:
+                events.append(json.loads(data))
+        return events
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
 def test_chat_send_message_defaults_to_openai_dict_messages(client):

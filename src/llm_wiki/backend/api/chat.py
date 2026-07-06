@@ -14,7 +14,7 @@ from llm_wiki.chat_store import MessageMetrics
 from ..core.app_logging import logger
 from ..core.error_codes import ErrorCode, raise_api_error, stream_error_text
 from ..core.response import success
-from ..core.utils import ndjson
+from ..core.utils import sse_json
 from ..schemas import ChatMessageReq, ChatStopReq, FeedbackReq, SessionCreateReq, SessionScopeReq
 
 router = APIRouter()
@@ -237,7 +237,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             return saved_answer
 
         try:
-            yield ndjson(
+            yield sse_json(
                 {
                     "type": "status",
                     "request_id": request_id,
@@ -257,7 +257,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 f"source={source} mode={mode} refs={len(refs)} retrieval_ms={retrieval_ms} "
                 f"elapsed_ms={int((time.perf_counter() - started) * 1000)}"
             )
-            yield ndjson(
+            yield sse_json(
                 {
                     "type": "meta",
                     "request_id": request_id,
@@ -279,7 +279,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             )
             stream = agent.stream_messages_compatible(messages, message_format=message_format)
             model_request_start_ms = int((time.perf_counter() - started) * 1000)
-            yield ndjson(
+            yield sse_json(
                 {
                     "type": "status",
                     "request_id": request_id,
@@ -304,7 +304,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 if first_delta_ms is None:
                     first_delta_ms = int((time.perf_counter() - started) * 1000)
                     model_wait_ms = first_delta_ms - (model_request_start_ms or 0)
-                    yield ndjson(
+                    yield sse_json(
                         {
                             "type": "status",
                             "request_id": request_id,
@@ -326,14 +326,14 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                         f"first_delta_ms={first_delta_ms}"
                     )
                 acc += delta
-                yield ndjson(
+                yield sse_json(
                     {"type": "delta", "request_id": request_id, "session_id": session_id, "text": delta}
                 )
             total_ms = int((time.perf_counter() - started) * 1000)
             if model_wait_ms is None and model_request_start_ms is not None:
                 model_wait_ms = total_ms - model_request_start_ms
             saved = persist_answer(total_ms, allow_empty=True, reason="done")
-            yield ndjson(
+            yield sse_json(
                 {
                     "type": "done",
                     "request_id": request_id,
@@ -364,7 +364,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     persist_answer(reason="error")
                 except Exception:
                     logger.exception("chat persist partial answer failed")
-            yield ndjson(
+            yield sse_json(
                 {
                     "type": "error",
                     "request_id": request_id,
@@ -382,8 +382,8 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 
     return StreamingResponse(
         gen(),
-        media_type="application/x-ndjson; charset=utf-8",
-        headers={"X-Request-ID": request_id, "X-Accel-Buffering": "no"},
+        media_type="text/event-stream; charset=utf-8",
+        headers={"X-Request-ID": request_id, "X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
 
 
