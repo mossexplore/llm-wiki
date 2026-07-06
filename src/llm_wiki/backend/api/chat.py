@@ -15,7 +15,7 @@ from ..core.app_logging import logger
 from ..core.error_codes import ErrorCode, raise_api_error, stream_error_text
 from ..core.response import success
 from ..core.utils import ndjson
-from ..schemas import ChatMessageReq, FeedbackReq, SessionCreateReq, SessionScopeReq
+from ..schemas import ChatMessageReq, ChatStopReq, FeedbackReq, SessionCreateReq, SessionScopeReq
 
 router = APIRouter()
 
@@ -81,6 +81,23 @@ def feedback_reason_json(reason) -> Optional[str]:
         ensure_ascii=False,
         separators=(",", ":"),
     )
+
+
+def _matching_recent_assistant(session_id: str, content: str) -> Optional[dict]:
+    """查找最近一轮用户问题之后已保存的同一条 assistant 回复。"""
+    needle = content or ""
+    if not needle:
+        return None
+    for message in reversed(chat_store.get_messages(session_id)):
+        role = message.get("role")
+        if role == "user":
+            return None
+        if role != "assistant":
+            continue
+        saved = message.get("content") or ""
+        if saved == needle or saved.startswith(needle) or needle.startswith(saved):
+            return message
+    return None
 
 
 @router.post("/api/chat/sessions")
@@ -178,6 +195,18 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             if answer_persisted or (not allow_empty and not acc.strip()):
                 return None
             elapsed_total_ms = total_ms if total_ms is not None else int((time.perf_counter() - started) * 1000)
+            existing = _matching_recent_assistant(session_id, acc)
+            if existing:
+                answer_persisted = True
+                logger.info(
+                    "chat.send.persist_answer.dedup session_id=%s request_id=%s reason=%s message_id=%s chars=%s",
+                    session_id,
+                    request_id,
+                    reason,
+                    existing.get("id"),
+                    len(acc),
+                )
+                return existing
             saved_answer = chat_store.add_message(
                 session_id,
                 "assistant",
@@ -356,6 +385,43 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
         media_type="application/x-ndjson; charset=utf-8",
         headers={"X-Request-ID": request_id, "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/api/chat/sessions/{session_id}/messages/stop")
+def chat_stop_message(session_id: str, req: ChatStopReq):
+    """停止生成时立即保存当前 assistant 片段,让前端马上拿到可反馈的 message id。"""
+    content = (req.content or "").strip()
+    if not content:
+        raise_api_error(ErrorCode.CHAT_MESSAGE_EMPTY)
+    user_id = (req.user_id or "").strip() or None
+    if not chat_store.session_exists(session_id, user_id=user_id):
+        raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
+
+    existing = _matching_recent_assistant(session_id, content)
+    if existing:
+        return success({"ok": True, "message": existing, "deduped": True})
+
+    total_ms = req.total_ms if req.total_ms is not None else req.elapsed_ms
+    saved = chat_store.add_message(
+        session_id,
+        "assistant",
+        content,
+        MessageMetrics(
+            answer_source=req.answer_source or "llm",
+            retrieval_mode=req.retrieval_mode or "none",
+            refs=req.refs or [],
+            elapsed_ms=total_ms,
+            retrieval_ms=req.retrieval_ms,
+            model_wait_ms=req.model_wait_ms,
+            first_delta_ms=req.first_delta_ms,
+            total_ms=total_ms,
+            message_count=req.message_count,
+            prompt_chars=req.prompt_chars,
+        ),
+        user_id=user_id,
+    )
+    logger.info("chat.stop.persist session_id=%s message_id=%s chars=%s", session_id, saved["id"], len(content))
+    return success({"ok": True, "message": saved, "deduped": False})
 
 
 @router.post("/api/chat/messages/{message_id}/feedback")

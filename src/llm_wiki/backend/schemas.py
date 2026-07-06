@@ -63,6 +63,21 @@ class ChatMessageReq(BaseModel):
     message_format: Optional[str] = None
 
 
+class ChatStopReq(BaseModel):
+    content: str
+    user_id: Optional[str] = None
+    answer_source: Optional[str] = None
+    retrieval_mode: Optional[str] = None
+    refs: list[dict] = Field(default_factory=list)
+    elapsed_ms: Optional[int] = None
+    retrieval_ms: Optional[int] = None
+    model_wait_ms: Optional[int] = None
+    first_delta_ms: Optional[int] = None
+    total_ms: Optional[int] = None
+    message_count: Optional[int] = None
+    prompt_chars: Optional[int] = None
+
+
 class FeedbackReasonReq(BaseModel):
     feedback_info: str = ""
     feedback_info_types: list[str] = Field(default_factory=list)

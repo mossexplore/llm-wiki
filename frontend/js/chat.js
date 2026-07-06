@@ -417,7 +417,7 @@
       }
     }
 
-    function stopChatStream(sessionId) {
+    async function stopChatStream(sessionId) {
       const streamState = getChatStream(sessionId);
       if (!streamState || !streamState.streaming) return;
       const partial = streamState.text || '';
@@ -427,12 +427,15 @@
       delete chatStreamAbortControllers[sessionId];
       if (controller) controller.abort();
       stopChatLatencyTimer();
+      streamState.streaming = false;
 
       if (partial.trim() && state.chatActive === sessionId && !state.chatMessagesLoading) {
-        const stoppedMessage = {
+        const localId = 'local-stopped-' + Date.now();
+        const persisted = await persistStoppedChatMessage(sessionId, partial, meta, status);
+        const stoppedMessage = persisted ? Object.assign({}, persisted, { stopped: true }) : {
           role: 'assistant',
           content: partial,
-          id: 'local-stopped-' + Date.now(),
+          id: localId,
           answer_source: meta.source,
           retrieval_mode: meta.mode,
           refs: meta.refs || [],
@@ -446,7 +449,7 @@
           stopped: true
         };
         state.chatMessages.push(stoppedMessage);
-        scheduleStoppedMessageHydration(sessionId, stoppedMessage.id, partial, 0);
+        if (!persisted) scheduleStoppedMessageHydration(sessionId, localId, partial, 0);
       }
 
       clearChatStream(sessionId);
@@ -458,6 +461,33 @@
       }
       loadChatSessions(false);
       showToast(partial.trim() ? '已停止生成' : '已停止请求');
+    }
+
+    async function persistStoppedChatMessage(sessionId, partial, meta, status) {
+      try {
+        const r = await fetch('/api/chat/sessions/' + encodeURIComponent(sessionId) + '/messages/stop', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: partial,
+            answer_source: meta && meta.source,
+            retrieval_mode: meta && meta.mode,
+            refs: meta && meta.refs || [],
+            elapsed_ms: status && status.elapsed_ms,
+            retrieval_ms: status && status.retrieval_ms,
+            model_wait_ms: status && status.model_wait_ms,
+            first_delta_ms: status && status.first_delta_ms,
+            total_ms: status && status.total_ms,
+            message_count: status && status.message_count,
+            prompt_chars: status && status.prompt_chars
+          })
+        });
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok) return null;
+        const data = apiData(payload);
+        return data && data.message || null;
+      } catch (_) {
+        return null;
+      }
     }
 
     function scheduleStoppedMessageHydration(sessionId, localId, partial, attempt) {
