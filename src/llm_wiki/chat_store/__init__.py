@@ -82,8 +82,9 @@ def add_message(
     metrics: MessageMetrics | None = None,
     *,
     user_id: str | None = None,
+    message_id: str | None = None,
 ) -> dict:
-    return _backend().add_message(session_id, role, content, metrics, user_id=user_id)
+    return _backend().add_message(session_id, role, content, metrics, user_id=user_id, message_id=message_id)
 
 
 def get_messages(session_id: str) -> list:

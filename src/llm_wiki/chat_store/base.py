@@ -152,10 +152,11 @@ class BaseChatStore:
         metrics: MessageMetrics | None = None,
         *,
         user_id: str | None = None,
+        message_id: str | None = None,
     ) -> dict:
         """追加一条消息,返回完整记录(含生成的 id / seq)。"""
         m = metrics or MessageMetrics()
-        mid = new_id()
+        mid = message_id or new_id()
         ts = now()
         refs_json = json.dumps(m.refs, ensure_ascii=False) if m.refs else None
         with self._tx() as c:

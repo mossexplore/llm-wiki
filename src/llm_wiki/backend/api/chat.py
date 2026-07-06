@@ -171,11 +171,13 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             logger.exception("chat rename_session failed session_id=%s", session_id)
 
     request_id = uuid.uuid4().hex[:12]
+    assistant_message_id = uuid.uuid4().hex
     started = time.perf_counter()
     logger.info(
-        "chat.send.start session_id=%s request_id=%s len=%s message_format=%s",
+        "chat.send.start session_id=%s request_id=%s message_id=%s len=%s message_format=%s",
         session_id,
         request_id,
+        assistant_message_id,
         len(text),
         message_format,
     )
@@ -224,6 +226,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     prompt_chars=prompt_stats["char_count"],
                 ),
                 user_id=user_id,
+                message_id=assistant_message_id,
             )
             answer_persisted = True
             logger.info(
@@ -242,6 +245,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     "type": "status",
                     "request_id": request_id,
                     "session_id": session_id,
+                    "message_id": assistant_message_id,
                     "stage": "retrieving",
                     "elapsed_ms": int((time.perf_counter() - started) * 1000),
                 }
@@ -262,6 +266,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     "type": "meta",
                     "request_id": request_id,
                     "session_id": session_id,
+                    "message_id": assistant_message_id,
                     "source": source,
                     "mode": mode,
                     "refs": refs,
@@ -284,6 +289,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     "type": "status",
                     "request_id": request_id,
                     "session_id": session_id,
+                    "message_id": assistant_message_id,
                     "stage": "generating",
                     "source": source,
                     "mode": mode,
@@ -309,6 +315,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                             "type": "status",
                             "request_id": request_id,
                             "session_id": session_id,
+                            "message_id": assistant_message_id,
                             "stage": "first_delta",
                             "source": source,
                             "mode": mode,
@@ -327,7 +334,13 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     )
                 acc += delta
                 yield sse_json(
-                    {"type": "delta", "request_id": request_id, "session_id": session_id, "text": delta}
+                    {
+                        "type": "delta",
+                        "request_id": request_id,
+                        "session_id": session_id,
+                        "message_id": assistant_message_id,
+                        "text": delta,
+                    }
                 )
             total_ms = int((time.perf_counter() - started) * 1000)
             if model_wait_ms is None and model_request_start_ms is not None:
@@ -338,7 +351,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     "type": "done",
                     "request_id": request_id,
                     "session_id": session_id,
-                    "message_id": saved["id"] if saved else None,
+                    "message_id": saved["id"] if saved else assistant_message_id,
                     "source": source,
                     "mode": mode,
                     "refs": refs,
@@ -369,6 +382,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     "type": "error",
                     "request_id": request_id,
                     "session_id": session_id,
+                    "message_id": assistant_message_id,
                     "code": ErrorCode.INTERNAL_ERROR.code,
                     "error": stream_error_text(request_id),
                 }
@@ -402,6 +416,7 @@ def chat_stop_message(session_id: str, req: ChatStopReq):
         return success({"ok": True, "message": existing, "deduped": True})
 
     total_ms = req.total_ms if req.total_ms is not None else req.elapsed_ms
+    message_id = (req.message_id or "").strip() or None
     saved = chat_store.add_message(
         session_id,
         "assistant",
@@ -419,6 +434,7 @@ def chat_stop_message(session_id: str, req: ChatStopReq):
             prompt_chars=req.prompt_chars,
         ),
         user_id=user_id,
+        message_id=message_id,
     )
     logger.info("chat.stop.persist session_id=%s message_id=%s chars=%s", session_id, saved["id"], len(content))
     return success({"ok": True, "message": saved, "deduped": False})

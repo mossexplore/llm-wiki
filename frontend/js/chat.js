@@ -232,6 +232,7 @@
       state.chatStreams[sessionId] = {
         token: streamToken,
         text: '',
+        messageId: '',
         meta: null,
         status: { stage: 'retrieving', elapsed_ms: 0 },
         streaming: true
@@ -277,6 +278,7 @@
         if (ev.session_id && ev.session_id !== sessionId) return true;
         const streamState = getChatStream(sessionId);
         if (!streamState) return true;
+        if (ev.message_id) streamState.messageId = ev.message_id;
         if (ev.type === 'meta') {
           streamState.meta = { source: ev.source, mode: ev.mode, refs: ev.refs || [], retrieval_ms: ev.retrieval_ms };
           streamState.status = Object.assign({}, streamState.status || {}, {
@@ -449,7 +451,7 @@
 
       if (partial.trim() && state.chatActive === sessionId && !state.chatMessagesLoading) {
         const localId = 'local-stopped-' + Date.now();
-        const persisted = await persistStoppedChatMessage(sessionId, partial, meta, status);
+        const persisted = await persistStoppedChatMessage(sessionId, partial, meta, status, streamState.messageId);
         const stoppedMessage = persisted ? Object.assign({}, persisted, { stopped: true }) : {
           role: 'assistant',
           content: partial,
@@ -481,12 +483,13 @@
       showToast(partial.trim() ? '已停止生成' : '已停止请求');
     }
 
-    async function persistStoppedChatMessage(sessionId, partial, meta, status) {
+    async function persistStoppedChatMessage(sessionId, partial, meta, status, messageId) {
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(sessionId) + '/messages/stop', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             content: partial,
+            message_id: messageId || undefined,
             answer_source: meta && meta.source,
             retrieval_mode: meta && meta.mode,
             refs: meta && meta.refs || [],

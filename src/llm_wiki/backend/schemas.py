@@ -65,6 +65,7 @@ class ChatMessageReq(BaseModel):
 
 class ChatStopReq(BaseModel):
     content: str
+    message_id: Optional[str] = None
     user_id: Optional[str] = None
     answer_source: Optional[str] = None
     retrieval_mode: Optional[str] = None

@@ -62,6 +62,10 @@ def test_chat_send_message_defaults_to_openai_dict_messages(client):
     assert client.captured["stream_message_format"] == "dict"
     done = [event for event in _events(response) if event["type"] == "done"][0]
     assert done["message_format"] == "dict"
+    events = _events(response)
+    message_ids = {event.get("message_id") for event in events}
+    assert len(message_ids) == 1
+    assert next(iter(message_ids))
 
 
 def test_chat_send_message_accepts_langchain_tuple_messages(client):
@@ -77,3 +81,7 @@ def test_chat_send_message_accepts_langchain_tuple_messages(client):
     assert client.captured["stream_message_format"] == "tuple"
     done = [event for event in _events(response) if event["type"] == "done"][0]
     assert done["message_format"] == "tuple"
+    events = _events(response)
+    message_ids = {event.get("message_id") for event in events}
+    assert len(message_ids) == 1
+    assert next(iter(message_ids))
