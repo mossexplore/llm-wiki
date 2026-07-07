@@ -660,7 +660,7 @@
         mask.innerHTML =
           '<div class="modal-box feedback-modal" role="dialog" aria-modal="true">' +
             '<div class="modal-head"><div class="modal-title">反馈:这条回答不太好</div></div>' +
-            '<div class="modal-msg">请选择原因,也可以补充具体说明:</div>' +
+            '<div class="modal-msg">可选择原因,也可以补充具体说明:</div>' +
             '<div class="feedback-type-row">' +
               FEEDBACK_INFO_TYPES.map(t =>
                 '<button class="feedback-type-btn" type="button" data-type="' + escapeHtml(t.value) + '" aria-pressed="false">' +
@@ -688,11 +688,6 @@
         function submit() {
           const info = input.value.trim();
           const types = selectedTypes();
-          if (!info && !types.length) {
-            input.focus();
-            showToast('请选择或填写点踩原因');
-            return;
-          }
           close({ feedback_info: info, feedback_info_types: types });
         }
         function onKey(e) {

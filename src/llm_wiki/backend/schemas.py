@@ -52,6 +52,7 @@ class SessionScopeReq(BaseModel):
 
 
 class SessionCreateReq(BaseModel):
+    session_id: Optional[str] = None
     title: Optional[str] = None
     user_id: Optional[str] = None
     source_code: Optional[str] = None
@@ -70,11 +71,11 @@ class ChatStopReq(BaseModel):
     answer_source: Optional[str] = None
     retrieval_mode: Optional[str] = None
     refs: list[dict] = Field(default_factory=list)
-    elapsed_ms: Optional[int] = None
-    retrieval_ms: Optional[int] = None
-    model_wait_ms: Optional[int] = None
-    first_delta_ms: Optional[int] = None
-    total_ms: Optional[int] = None
+    elapsed_ms: Optional[int] = Field(default=None, gt=0)
+    retrieval_ms: Optional[int] = Field(default=None, gt=0)
+    model_wait_ms: Optional[int] = Field(default=None, gt=0)
+    first_delta_ms: Optional[int] = Field(default=None, gt=0)
+    total_ms: Optional[int] = Field(default=None, gt=0)
     message_count: Optional[int] = None
     prompt_chars: Optional[int] = None
 

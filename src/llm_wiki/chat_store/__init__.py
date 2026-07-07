@@ -47,8 +47,13 @@ def _backend() -> BaseChatStore:
     return _stores[name]
 
 
-def create_session(title: str = "新会话", user_id: str | None = None, source_code: str = "web") -> dict:
-    return _backend().create_session(title, user_id, source_code)
+def create_session(
+    title: str = "新会话",
+    user_id: str | None = None,
+    source_code: str = "web",
+    session_id: str | None = None,
+) -> dict:
+    return _backend().create_session(title, user_id, source_code, session_id=session_id)
 
 
 def list_sessions(user_id: str | None = None) -> list:

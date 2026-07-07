@@ -41,6 +41,19 @@ def test_list_sessions_post_without_body(client):
     assert len(_data(response)["items"]) == 1
 
 
+def test_create_session_accepts_session_id(client):
+    response = client.post(
+        "/api/chat/sessions",
+        json={"session_id": "client-session-1", "title": "客户端会话", "user_id": "u1"},
+    )
+
+    assert response.status_code == 200
+    data = _data(response)
+    assert data["id"] == "client-session-1"
+    assert data["title"] == "客户端会话"
+    assert chat_store.session_exists("client-session-1", user_id="u1") is True
+
+
 def test_list_sessions_includes_message_count(client):
     session = chat_store.create_session("s1", user_id="u1")
     chat_store.add_message(session["id"], "user", "hello", user_id="u1")
@@ -57,6 +70,28 @@ def test_list_sessions_post_scopes_by_user_id_in_body(client):
 
     assert _data(client.post("/api/chat/sessions/list", json={"user_id": "u1"}))["items"]
     assert _data(client.post("/api/chat/sessions/list", json={"user_id": "other"}))["items"] == []
+
+
+def test_session_exists_post(client):
+    session = chat_store.create_session("s1", user_id="u1")
+
+    found = client.post(f"/api/chat/sessions/{session['id']}/exists")
+    missing = client.post("/api/chat/sessions/not-found/exists")
+
+    assert found.status_code == 200
+    assert missing.status_code == 200
+    assert _data(found)["exists"] is True
+    assert _data(missing)["exists"] is False
+
+
+def test_session_exists_post_enforces_user_scope(client):
+    session = chat_store.create_session("s1", user_id="u1")
+
+    owned = client.post(f"/api/chat/sessions/{session['id']}/exists", json={"user_id": "u1"})
+    other = client.post(f"/api/chat/sessions/{session['id']}/exists", json={"user_id": "other"})
+
+    assert _data(owned)["exists"] is True
+    assert _data(other)["exists"] is False
 
 
 def test_messages_list_post(client):

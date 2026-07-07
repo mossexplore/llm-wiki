@@ -36,9 +36,13 @@ class BaseChatStore:
 
     # --- 会话 ---------------------------------------------------------------
     def create_session(
-        self, title: str = "新会话", user_id: str | None = None, source_code: str = "web"
+        self,
+        title: str = "新会话",
+        user_id: str | None = None,
+        source_code: str = "web",
+        session_id: str | None = None,
     ) -> dict:
-        sid = new_id()
+        sid = session_id or new_id()
         ts = now()
         title = title or "新会话"
         source_code = source_code or "web"

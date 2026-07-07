@@ -102,9 +102,17 @@ def _matching_recent_assistant(session_id: str, content: str) -> Optional[dict]:
 
 @router.post("/api/chat/sessions")
 def chat_create_session(req: SessionCreateReq):
+    session_id = (req.session_id or "").strip() or None
     user_id = (req.user_id or "").strip() or None
     source_code = (req.source_code or "").strip() or "web"
-    return success(chat_store.create_session(req.title or "新会话", user_id=user_id, source_code=source_code))
+    return success(
+        chat_store.create_session(
+            req.title or "新会话",
+            user_id=user_id,
+            source_code=source_code,
+            session_id=session_id,
+        )
+    )
 
 
 def _scope_user_id(req: Optional[SessionScopeReq]) -> Optional[str]:
@@ -118,6 +126,13 @@ def chat_list_sessions(req: Optional[SessionScopeReq] = None):
     """列出会话;请求体带 user_id 时只返回该用户的会话,不传则返回全部。"""
     user_id = _scope_user_id(req)
     return success({"items": chat_store.list_sessions(user_id=user_id)})
+
+
+@router.post("/api/chat/sessions/{session_id}/exists")
+def chat_session_exists(session_id: str, req: Optional[SessionScopeReq] = None):
+    """判断会话是否存在;请求体带 user_id 时要求会话归属该用户。"""
+    user_id = _scope_user_id(req)
+    return success({"exists": chat_store.session_exists(session_id, user_id=user_id)})
 
 
 @router.post("/api/chat/sessions/clear")
@@ -455,7 +470,5 @@ def chat_feedback(message_id: str, req: FeedbackReq):
         chat_store.clear_feedback(message_id)
         return success({"ok": True, "message_id": message_id, "feedback": None, "reason": None})
     reason = feedback_reason_json(req.reason)
-    if feedback == "unlike" and not reason:
-        raise_api_error(ErrorCode.CHAT_FEEDBACK_REASON_REQUIRED)
     user_id = req_user_id or msg.get("user_id")
     return success(chat_store.set_feedback(message_id, msg["session_id"], feedback, reason, user_id))
