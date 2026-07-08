@@ -15,7 +15,14 @@ from ..core.app_logging import logger
 from ..core.error_codes import ErrorCode, raise_api_error, stream_error_text
 from ..core.response import success
 from ..core.utils import sse_json
-from ..schemas import ChatMessageReq, ChatStopReq, FeedbackReq, SessionCreateReq, SessionScopeReq
+from ..schemas import (
+    ChatMessageReq,
+    ChatStopReq,
+    FeedbackReq,
+    SessionCreateReq,
+    SessionListReq,
+    SessionScopeReq,
+)
 
 router = APIRouter()
 
@@ -122,10 +129,21 @@ def _scope_user_id(req: Optional[SessionScopeReq]) -> Optional[str]:
 
 # 部署环境强制 POST:原 GET/DELETE 端点统一改为 POST,user_id 从 query 改到请求体。
 @router.post("/api/chat/sessions/list")
-def chat_list_sessions(req: Optional[SessionScopeReq] = None):
-    """列出会话;请求体带 user_id 时只返回该用户的会话,不传则返回全部。"""
+def chat_list_sessions(req: Optional[SessionListReq] = None):
+    """分页列出会话;请求体带 user_id 时只返回该用户的会话。"""
     user_id = _scope_user_id(req)
-    return success({"items": chat_store.list_sessions(user_id=user_id)})
+    page = req.page if req else 1
+    page_size = req.page_size if req else 10
+    sessions = chat_store.list_sessions(user_id=user_id)
+    start = (page - 1) * page_size
+    return success(
+        {
+            "items": sessions[start : start + page_size],
+            "page": page,
+            "page_size": page_size,
+            "total": len(sessions),
+        }
+    )
 
 
 @router.post("/api/chat/sessions/{session_id}/exists")
@@ -211,12 +229,15 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             nonlocal answer_persisted
             if answer_persisted or (not allow_empty and not acc.strip()):
                 return None
-            elapsed_total_ms = total_ms if total_ms is not None else int((time.perf_counter() - started) * 1000)
+            elapsed_total_ms = (
+                total_ms if total_ms is not None else int((time.perf_counter() - started) * 1000)
+            )
             existing = _matching_recent_assistant(session_id, acc)
             if existing:
                 answer_persisted = True
                 logger.info(
-                    "chat.send.persist_answer.dedup session_id=%s request_id=%s reason=%s message_id=%s chars=%s",
+                    "chat.send.persist_answer.dedup "
+                    "session_id=%s request_id=%s reason=%s message_id=%s chars=%s",
                     session_id,
                     request_id,
                     reason,
@@ -451,7 +472,12 @@ def chat_stop_message(session_id: str, req: ChatStopReq):
         user_id=user_id,
         message_id=message_id,
     )
-    logger.info("chat.stop.persist session_id=%s message_id=%s chars=%s", session_id, saved["id"], len(content))
+    logger.info(
+        "chat.stop.persist session_id=%s message_id=%s chars=%s",
+        session_id,
+        saved["id"],
+        len(content),
+    )
     return success({"ok": True, "message": saved, "deduped": False})
 
 

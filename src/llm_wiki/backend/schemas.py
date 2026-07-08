@@ -51,6 +51,11 @@ class SessionScopeReq(BaseModel):
     user_id: Optional[str] = None
 
 
+class SessionListReq(SessionScopeReq):
+    page: int = Field(default=1, gt=0)
+    page_size: int = Field(default=10, gt=0)
+
+
 class SessionCreateReq(BaseModel):
     session_id: Optional[str] = None
     title: Optional[str] = None

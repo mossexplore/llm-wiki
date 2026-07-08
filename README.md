@@ -256,7 +256,7 @@ sources:
 | `GET`    | `/api/kb/stats`                | 返回案例数、草稿数、signature 数和更新时间。    |
 | `GET`    | `/api/examples/ingest`         | 返回一条示例原始记录和示例结构化案例。          |
 | `POST`   | `/api/chat/sessions`           | 新建对话会话。                                  |
-| `POST`   | `/api/chat/sessions/list`      | 列出全部会话（按最近活跃排序）。                |
+| `POST`   | `/api/chat/sessions/list`      | 分页列出会话（默认第 1 页，每页 10 条，按最近活跃排序）。 |
 | `POST`   | `/api/chat/sessions/{id}/messages/list` | 获取某会话的全部消息（含反馈）。       |
 | `POST`   | `/api/chat/sessions/{id}/delete` | 删除会话及其消息、反馈。                      |
 | `POST`   | `/api/chat/sessions/clear`     | 清空全部会话（可按 `user_id` 限定）。           |

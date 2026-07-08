@@ -38,7 +38,28 @@ def test_list_sessions_post_without_body(client):
     response = client.post("/api/chat/sessions/list")
 
     assert response.status_code == 200
-    assert len(_data(response)["items"]) == 1
+    data = _data(response)
+    assert len(data["items"]) == 1
+    assert data["page"] == 1
+    assert data["page_size"] == 10
+    assert data["total"] == 1
+
+
+def test_list_sessions_post_defaults_to_first_page_ten(client):
+    for i in range(12):
+        chat_store.create_session(f"s{i}")
+
+    first = _data(client.post("/api/chat/sessions/list"))
+    second = _data(client.post("/api/chat/sessions/list", json={"page": 2, "page_size": 10}))
+
+    assert first["page"] == 1
+    assert first["page_size"] == 10
+    assert first["total"] == 12
+    assert len(first["items"]) == 10
+    assert second["page"] == 2
+    assert second["page_size"] == 10
+    assert second["total"] == 12
+    assert len(second["items"]) == 2
 
 
 def test_create_session_accepts_session_id(client):
