@@ -78,7 +78,7 @@ def feedback_reason_json(reason) -> Optional[str]:
     seen = set()
     for item in reason.feedback_info_types or []:
         key = (item or "").strip()
-        if key and key in FEEDBACK_INFO_TYPE_LABELS and key not in seen:
+        if key and key not in seen:
             types.append(key)
             seen.add(key)
     if not info and not types:
