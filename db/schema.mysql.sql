@@ -32,19 +32,16 @@ CREATE TABLE IF NOT EXISTS t_cases (
 -- 精确命中专用表。要点：
 --   1. 显式主键 id（CHAR(64) UUID，应用层 uuid4 生成）—— InnoDB 是索引组织表，没有显式主键
 --      会生成业务不可用的 6 字节隐藏聚簇键；用 UUID 而非自增，便于多源写入/迁移时主键不冲突。
---   2. 外键 case_id -> t_cases.id ON DELETE CASCADE —— 删案例时自动清理 signature，杜绝孤儿行
---      污染「无命中门控」的最高优先级精确命中（应用层不再需要单独 DELETE，但保留亦无害）。
---   3. UNIQUE(case_id, signature(255)) —— 同一案例同一 signature 不重复入库，避免同一命中被重复计数；
---      兼作 case_id 的索引（外键所需），故不再单列 idx_case_signatures_case。
---   4. signature 列固定 utf8mb4_bin —— 精确命中要求「原文照搬」的二进制比较；配合应用层两侧 LOWER()，
+--   2. UNIQUE(case_id, signature(255)) —— 同一案例同一 signature 不重复入库，避免同一命中被重复计数。
+--      删除案例时由应用层显式清理关联 signature，不依赖数据库外键级联。
+--   3. signature 列固定 utf8mb4_bin —— 精确命中要求「原文照搬」的二进制比较；配合应用层两侧 LOWER()，
 --      得到与 SQLite instr(lower()) 完全一致、且跨 MySQL 版本稳定的「忽略大小写」子串匹配。
 CREATE TABLE IF NOT EXISTS t_case_signatures (
   id         CHAR(64) NOT NULL PRIMARY KEY COMMENT '行主键, 应用层 uuid4 生成',
   case_id    VARCHAR(128) NOT NULL COMMENT '关联 t_cases.id 的案例 slug',
   signature  TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT '用于精确命中的原始错误特征文本',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '入库时间, 由 DB 默认值填充, 调试/审计用',
-  UNIQUE KEY uniq_case_signature (case_id, signature(255)),
-  CONSTRAINT fk_case_signatures_case FOREIGN KEY (case_id) REFERENCES t_cases(id) ON DELETE CASCADE
+  UNIQUE KEY uniq_case_signature (case_id, signature(255))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- 模糊召回查询示例（替换 SQLite 的 MATCH t_cases_fts）：

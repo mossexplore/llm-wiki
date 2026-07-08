@@ -33,9 +33,6 @@ class SqliteSearch(SearchBackend):
     def _connect(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
-        # SQLite 默认不强制外键, 必须每个连接显式开启, t_case_signatures 的
-        # ON DELETE CASCADE 才会生效。须在 executescript(隐式事务)之前设置。
-        conn.execute("PRAGMA foreign_keys = ON")
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         return conn
 
@@ -60,8 +57,8 @@ class SqliteSearch(SearchBackend):
         if row:
             rid = row[0]
             conn.execute("DELETE FROM t_cases_fts WHERE rowid=?", (rid,))
-            conn.execute("DELETE FROM t_cases WHERE rowid=?", (rid,))
             conn.execute("DELETE FROM t_case_signatures WHERE case_id=?", (cid,))
+            conn.execute("DELETE FROM t_cases WHERE rowid=?", (rid,))
         sigs = case.get("signatures") or []
         comps = case.get("components") or []
         cur = conn.execute(
@@ -118,8 +115,8 @@ class SqliteSearch(SearchBackend):
             row = conn.execute("SELECT rowid FROM t_cases WHERE id=?", (case_id,)).fetchone()
             if row:
                 conn.execute("DELETE FROM t_cases_fts WHERE rowid=?", (row[0],))
-                conn.execute("DELETE FROM t_cases WHERE rowid=?", (row[0],))
                 conn.execute("DELETE FROM t_case_signatures WHERE case_id=?", (case_id,))
+                conn.execute("DELETE FROM t_cases WHERE rowid=?", (row[0],))
                 conn.commit()
                 self._matcher_dirty = True
         finally:
