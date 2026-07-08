@@ -85,3 +85,23 @@ def test_chat_send_message_accepts_langchain_tuple_messages(client):
     message_ids = {event.get("message_id") for event in events}
     assert len(message_ids) == 1
     assert next(iter(message_ids))
+
+
+def test_chat_send_message_renames_default_session_title(client):
+    session = chat_store.create_session("新会话")
+
+    response = client.post(f"/api/chat/sessions/{session['id']}/messages", json={"content": "第一条用户问题"})
+
+    assert response.status_code == 200
+    [stored] = [item for item in chat_store.list_sessions() if item["id"] == session["id"]]
+    assert stored["title"] == "第一条用户问题"
+
+
+def test_chat_send_message_keeps_custom_session_title(client):
+    session = chat_store.create_session("我的自定义标题")
+
+    response = client.post(f"/api/chat/sessions/{session['id']}/messages", json={"content": "第一条用户问题"})
+
+    assert response.status_code == 200
+    [stored] = [item for item in chat_store.list_sessions() if item["id"] == session["id"]]
+    assert stored["title"] == "我的自定义标题"

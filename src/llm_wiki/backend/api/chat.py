@@ -50,6 +50,14 @@ def session_title(text: str) -> str:
     return line[:20] + ("…" if len(line) > 20 else "")
 
 
+def should_rename_default_session(session_id: str, user_id: Optional[str]) -> bool:
+    """仅当当前会话标题仍是默认值时,才用用户问题生成标题。"""
+    for session in chat_store.list_sessions(user_id=user_id):
+        if session.get("id") == session_id:
+            return (session.get("title") or "").strip() == "新会话"
+    return False
+
+
 def normalize_message_format(value: Optional[str]) -> str:
     """归一化 chat message 结构:OpenAI=dict,LangChain=tuple。"""
     key = (value or "openai").strip().lower()
@@ -195,9 +203,9 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
     message_format = normalize_message_format(req.message_format)
 
-    has_messages = chat_store.has_messages(session_id)
+    should_rename = should_rename_default_session(session_id, user_id)
     chat_store.add_message(session_id, "user", text, user_id=user_id)
-    if not has_messages:
+    if should_rename:
         try:
             chat_store.rename_session(session_id, session_title(text))
         except Exception:
