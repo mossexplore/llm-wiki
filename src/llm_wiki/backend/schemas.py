@@ -1,6 +1,6 @@
-from typing import Optional, Union
+from typing import Annotated, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 
 class PreviewReq(BaseModel):
@@ -70,8 +70,8 @@ class ChatMessageReq(BaseModel):
 
 
 class ChatStopReq(BaseModel):
-    content: str
-    message_id: Optional[str] = None
+    message_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    content: str = ""
     user_id: Optional[str] = None
     answer_source: Optional[str] = None
     retrieval_mode: Optional[str] = None

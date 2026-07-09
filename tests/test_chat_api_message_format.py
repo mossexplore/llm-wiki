@@ -127,6 +127,57 @@ def test_stop_message_is_idempotent_by_message_id(client):
     assert len(messages) == 1
 
 
+def test_stop_message_requires_message_id(client):
+    session = chat_store.create_session("s")
+
+    response = client.post(
+        f"/api/chat/sessions/{session['id']}/messages/stop",
+        json={"content": "partial", "elapsed_ms": 1},
+    )
+
+    assert response.status_code == 422
+
+
+def test_stop_message_accepts_full_request_body(client):
+    session = chat_store.create_session("s", user_id="user-1")
+    request_body = {
+        "content": "partial answer",
+        "message_id": "assistant-full",
+        "user_id": "user-1",
+        "answer_source": "wiki",
+        "retrieval_mode": "exact",
+        "refs": [{"id": "case-1", "title": "Case 1"}],
+        "elapsed_ms": 100,
+        "retrieval_ms": 20,
+        "model_wait_ms": 30,
+        "first_delta_ms": 40,
+        "total_ms": 120,
+        "message_count": 6,
+        "prompt_chars": 512,
+    }
+
+    response = client.post(
+        f"/api/chat/sessions/{session['id']}/messages/stop",
+        json=request_body,
+    )
+
+    assert response.status_code == 200
+    message = response.json()["result"]["data"]["message"]
+    assert message["id"] == request_body["message_id"]
+    assert message["user_id"] == request_body["user_id"]
+    assert message["content"] == request_body["content"]
+    assert message["answer_source"] == request_body["answer_source"]
+    assert message["retrieval_mode"] == request_body["retrieval_mode"]
+    assert message["refs"] == request_body["refs"]
+    assert message["elapsed_ms"] == request_body["total_ms"]
+    assert message["retrieval_ms"] == request_body["retrieval_ms"]
+    assert message["model_wait_ms"] == request_body["model_wait_ms"]
+    assert message["first_delta_ms"] == request_body["first_delta_ms"]
+    assert message["total_ms"] == request_body["total_ms"]
+    assert message["message_count"] == request_body["message_count"]
+    assert message["prompt_chars"] == request_body["prompt_chars"]
+
+
 def test_stop_message_prefers_active_stream_snapshot(client):
     session = chat_store.create_session("s")
     active = chat_api.ActiveChatStream(
