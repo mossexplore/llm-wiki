@@ -30,7 +30,7 @@ def test_feedback_reason_json_keeps_structured_reason():
     }
 
 
-def test_feedback_reason_json_filters_unknown_and_duplicate_types():
+def test_feedback_reason_json_keeps_custom_types_and_deduplicates():
     reason = FeedbackReasonReq(
         feedback_info="",
         feedback_info_types=["not_helpful", "unknown", "not_helpful", "misunderstood_intent"],
@@ -40,7 +40,7 @@ def test_feedback_reason_json_filters_unknown_and_duplicate_types():
 
     assert saved == {
         "feedback_info": "",
-        "feedback_info_types": ["not_helpful", "misunderstood_intent"],
+        "feedback_info_types": ["not_helpful", "unknown", "misunderstood_intent"],
     }
 
 

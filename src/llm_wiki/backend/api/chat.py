@@ -1,6 +1,8 @@
 import json
+import threading
 import time
 import uuid
+from dataclasses import dataclass, field
 from typing import Optional
 
 from fastapi import APIRouter
@@ -41,6 +43,59 @@ MESSAGE_FORMAT_ALIASES = {
     "langchain": "tuple",
     "tuple": "tuple",
 }
+
+
+@dataclass
+class ActiveChatStream:
+    session_id: str
+    user_id: Optional[str]
+    message_id: str
+    request_id: str
+    started: float
+    cancel_event: threading.Event = field(default_factory=threading.Event)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    acc: str = ""
+    source: str = "llm"
+    mode: str = "none"
+    refs: list = field(default_factory=list)
+    retrieval_ms: int = 0
+    first_delta_ms: Optional[int] = None
+    model_wait_ms: Optional[int] = None
+    total_ms: Optional[int] = None
+    message_count: Optional[int] = None
+    prompt_chars: Optional[int] = None
+    stream_obj: object = None
+
+
+ACTIVE_CHAT_STREAMS: dict[str, ActiveChatStream] = {}
+ACTIVE_CHAT_STREAMS_LOCK = threading.Lock()
+
+
+def register_active_stream(active: ActiveChatStream) -> None:
+    with ACTIVE_CHAT_STREAMS_LOCK:
+        ACTIVE_CHAT_STREAMS[active.message_id] = active
+
+
+def get_active_stream(message_id: Optional[str]) -> Optional[ActiveChatStream]:
+    if not message_id:
+        return None
+    with ACTIVE_CHAT_STREAMS_LOCK:
+        return ACTIVE_CHAT_STREAMS.get(message_id)
+
+
+def unregister_active_stream(message_id: str, active: ActiveChatStream) -> None:
+    with ACTIVE_CHAT_STREAMS_LOCK:
+        if ACTIVE_CHAT_STREAMS.get(message_id) is active:
+            ACTIVE_CHAT_STREAMS.pop(message_id, None)
+
+
+def close_stream_obj(stream_obj) -> None:
+    close = getattr(stream_obj, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            logger.exception("chat stream close failed")
 
 
 def session_title(text: str) -> str:
@@ -111,6 +166,15 @@ def _matching_recent_assistant(session_id: str, content: str) -> Optional[dict]:
             continue
         saved = message.get("content") or ""
         if saved == needle or saved.startswith(needle) or needle.startswith(saved):
+            return message
+    return None
+
+
+def _message_by_id(session_id: str, message_id: Optional[str]) -> Optional[dict]:
+    if not message_id:
+        return None
+    for message in reversed(chat_store.get_messages(session_id)):
+        if message.get("id") == message_id:
             return message
     return None
 
@@ -214,6 +278,14 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
     request_id = uuid.uuid4().hex[:12]
     assistant_message_id = uuid.uuid4().hex
     started = time.perf_counter()
+    active_stream = ActiveChatStream(
+        session_id=session_id,
+        user_id=user_id,
+        message_id=assistant_message_id,
+        request_id=request_id,
+        started=started,
+    )
+    register_active_stream(active_stream)
     logger.info(
         "chat.send.start session_id=%s request_id=%s message_id=%s len=%s message_format=%s",
         session_id,
@@ -240,6 +312,10 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             elapsed_total_ms = (
                 total_ms if total_ms is not None else int((time.perf_counter() - started) * 1000)
             )
+            existing_by_id = _message_by_id(session_id, assistant_message_id)
+            if existing_by_id:
+                answer_persisted = True
+                return existing_by_id
             existing = _matching_recent_assistant(session_id, acc)
             if existing:
                 answer_persisted = True
@@ -296,10 +372,17 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
             )
             retrieve_started = time.perf_counter()
             decision = RETRIEVER.retrieve(text)
+            if active_stream.cancel_event.is_set():
+                return
             retrieval_ms = decision.get("elapsed_ms", int((time.perf_counter() - retrieve_started) * 1000))
             source = decision["source"]
             mode = decision["mode"]
             refs = decision["refs"]
+            with active_stream.lock:
+                active_stream.source = source
+                active_stream.mode = mode
+                active_stream.refs = refs
+                active_stream.retrieval_ms = retrieval_ms
             logger.info(
                 f"chat.send.retrieved session_id={session_id} request_id={request_id} "
                 f"source={source} mode={mode} refs={len(refs)} retrieval_ms={retrieval_ms} "
@@ -327,7 +410,14 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 f"message_lengths={prompt_stats['message_lengths']}"
             )
             stream = agent.stream_messages_compatible(messages, message_format=message_format)
+            with active_stream.lock:
+                active_stream.stream_obj = stream
+                active_stream.message_count = prompt_stats["message_count"]
+                active_stream.prompt_chars = prompt_stats["char_count"]
             model_request_start_ms = int((time.perf_counter() - started) * 1000)
+            if active_stream.cancel_event.is_set():
+                close_stream_obj(stream)
+                return
             yield sse_json(
                 {
                     "type": "status",
@@ -351,9 +441,15 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                 f"elapsed_ms={int((time.perf_counter() - started) * 1000)}"
             )
             for delta in stream:
+                if active_stream.cancel_event.is_set():
+                    close_stream_obj(stream)
+                    break
                 if first_delta_ms is None:
                     first_delta_ms = int((time.perf_counter() - started) * 1000)
                     model_wait_ms = first_delta_ms - (model_request_start_ms or 0)
+                    with active_stream.lock:
+                        active_stream.first_delta_ms = first_delta_ms
+                        active_stream.model_wait_ms = model_wait_ms
                     yield sse_json(
                         {
                             "type": "status",
@@ -377,6 +473,8 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                         f"first_delta_ms={first_delta_ms}"
                     )
                 acc += delta
+                with active_stream.lock:
+                    active_stream.acc = acc
                 yield sse_json(
                     {
                         "type": "delta",
@@ -386,9 +484,14 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                         "text": delta,
                     }
                 )
+            if active_stream.cancel_event.is_set():
+                return
             total_ms = int((time.perf_counter() - started) * 1000)
             if model_wait_ms is None and model_request_start_ms is not None:
                 model_wait_ms = total_ms - model_request_start_ms
+            with active_stream.lock:
+                active_stream.total_ms = total_ms
+                active_stream.model_wait_ms = model_wait_ms
             saved = persist_answer(total_ms, allow_empty=True, reason="done")
             yield sse_json(
                 {
@@ -437,6 +540,7 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
                     persist_answer(reason="disconnect")
                 except Exception:
                     logger.exception("chat persist disconnected partial answer failed")
+            unregister_active_stream(assistant_message_id, active_stream)
 
     return StreamingResponse(
         gen(),
@@ -448,38 +552,76 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 @router.post("/api/chat/sessions/{session_id}/messages/stop")
 def chat_stop_message(session_id: str, req: ChatStopReq):
     """停止生成时立即保存当前 assistant 片段,让前端马上拿到可反馈的 message id。"""
-    content = (req.content or "").strip()
-    if not content:
-        raise_api_error(ErrorCode.CHAT_MESSAGE_EMPTY)
     user_id = (req.user_id or "").strip() or None
     if not chat_store.session_exists(session_id, user_id=user_id):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
+
+    message_id = (req.message_id or "").strip() or None
+    active = get_active_stream(message_id)
+    active_snapshot = {}
+    if active and active.session_id == session_id:
+        active.cancel_event.set()
+        with active.lock:
+            active_snapshot = {
+                "content": active.acc,
+                "source": active.source,
+                "mode": active.mode,
+                "refs": active.refs,
+                "retrieval_ms": active.retrieval_ms,
+                "model_wait_ms": active.model_wait_ms,
+                "first_delta_ms": active.first_delta_ms,
+                "total_ms": active.total_ms,
+                "message_count": active.message_count,
+                "prompt_chars": active.prompt_chars,
+                "stream_obj": active.stream_obj,
+                "elapsed_ms": int((time.perf_counter() - active.started) * 1000),
+            }
+        close_stream_obj(active_snapshot.get("stream_obj"))
+
+    content = (active_snapshot.get("content") or req.content or "").strip()
+    if not content:
+        raise_api_error(ErrorCode.CHAT_MESSAGE_EMPTY)
+
+    existing_by_id = _message_by_id(session_id, message_id)
+    if existing_by_id:
+        return success({"ok": True, "message": existing_by_id, "deduped": True})
 
     existing = _matching_recent_assistant(session_id, content)
     if existing:
         return success({"ok": True, "message": existing, "deduped": True})
 
-    total_ms = req.total_ms if req.total_ms is not None else req.elapsed_ms
-    message_id = (req.message_id or "").strip() or None
-    saved = chat_store.add_message(
-        session_id,
-        "assistant",
-        content,
-        MessageMetrics(
-            answer_source=req.answer_source or "llm",
-            retrieval_mode=req.retrieval_mode or "none",
-            refs=req.refs or [],
-            elapsed_ms=total_ms,
-            retrieval_ms=req.retrieval_ms,
-            model_wait_ms=req.model_wait_ms,
-            first_delta_ms=req.first_delta_ms,
-            total_ms=total_ms,
-            message_count=req.message_count,
-            prompt_chars=req.prompt_chars,
-        ),
-        user_id=user_id,
-        message_id=message_id,
+    total_ms = (
+        req.total_ms
+        or active_snapshot.get("total_ms")
+        or req.elapsed_ms
+        or active_snapshot.get("elapsed_ms")
     )
+    metrics = MessageMetrics(
+        answer_source=req.answer_source or active_snapshot.get("source") or "llm",
+        retrieval_mode=req.retrieval_mode or active_snapshot.get("mode") or "none",
+        refs=req.refs or active_snapshot.get("refs") or [],
+        elapsed_ms=total_ms,
+        retrieval_ms=req.retrieval_ms or active_snapshot.get("retrieval_ms"),
+        model_wait_ms=req.model_wait_ms or active_snapshot.get("model_wait_ms"),
+        first_delta_ms=req.first_delta_ms or active_snapshot.get("first_delta_ms"),
+        total_ms=total_ms,
+        message_count=req.message_count or active_snapshot.get("message_count"),
+        prompt_chars=req.prompt_chars or active_snapshot.get("prompt_chars"),
+    )
+    try:
+        saved = chat_store.add_message(
+            session_id,
+            "assistant",
+            content,
+            metrics,
+            user_id=user_id,
+            message_id=message_id,
+        )
+    except Exception:
+        existing_by_id = _message_by_id(session_id, message_id)
+        if existing_by_id:
+            return success({"ok": True, "message": existing_by_id, "deduped": True})
+        raise
     logger.info(
         "chat.stop.persist session_id=%s message_id=%s chars=%s",
         session_id,

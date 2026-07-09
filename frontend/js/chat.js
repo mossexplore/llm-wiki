@@ -5,6 +5,7 @@
     let chatLatencyTimer = null;
     let chatStreamAbortControllers = {};
     let chatStreamSeq = 0;
+    let chatStoppedPersistPromises = {};
     const STOPPED_HYDRATE_DELAYS = [350, 900, 1600, 2600, 4000, 6500];
 
     function iconChat() { return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'; }
@@ -450,9 +451,9 @@
       streamState.streaming = false;
 
       if (partial.trim() && state.chatActive === sessionId && !state.chatMessagesLoading) {
-        const localId = 'local-stopped-' + Date.now();
-        const persisted = await persistStoppedChatMessage(sessionId, partial, meta, status, streamState.messageId);
-        const stoppedMessage = persisted ? Object.assign({}, persisted, { stopped: true }) : {
+        const messageId = streamState.messageId || '';
+        const localId = messageId || ('local-stopped-' + Date.now());
+        const stoppedMessage = {
           role: 'assistant',
           content: partial,
           id: localId,
@@ -466,10 +467,29 @@
           elapsed_ms: status.elapsed_ms,
           message_count: status.message_count,
           prompt_chars: status.prompt_chars,
-          stopped: true
+          stopped: true,
+          persist_pending: true
         };
         state.chatMessages.push(stoppedMessage);
-        if (!persisted) scheduleStoppedMessageHydration(sessionId, localId, partial, 0);
+        syncActiveChatStreamState();
+        render();
+
+        const persistPromise = persistStoppedChatMessage(sessionId, partial, meta, status, messageId);
+        if (messageId) chatStoppedPersistPromises[messageId] = persistPromise;
+        const persisted = await persistPromise;
+        if (messageId && chatStoppedPersistPromises[messageId] === persistPromise) {
+          delete chatStoppedPersistPromises[messageId];
+        }
+        const replaceIndex = state.chatMessages.findIndex(m => m.id === localId && m.stopped);
+        if (persisted && replaceIndex >= 0) {
+          state.chatMessages[replaceIndex] = Object.assign({}, persisted, { stopped: true });
+        } else if (replaceIndex >= 0) {
+          state.chatMessages[replaceIndex].persist_pending = false;
+          if (!String(state.chatMessages[replaceIndex].id || '').startsWith('local-')) {
+            state.chatMessages[replaceIndex].persist_failed = true;
+          }
+          scheduleStoppedMessageHydration(sessionId, localId, partial, 0);
+        }
       }
 
       clearChatStream(sessionId);
@@ -717,6 +737,13 @@
         return;
       }
       const msg = state.chatMessages.find(m => m.id === messageId);
+      if (msg && (msg.persist_pending || msg.persist_failed)) {
+        showToast('反馈同步中,请稍候');
+        return;
+      }
+      if (chatStoppedPersistPromises[messageId]) {
+        await chatStoppedPersistPromises[messageId];
+      }
       const clearing = msg && msg.feedback === feedback;
       let reason = null;
       if (feedback === 'unlike' && !clearing) {
@@ -907,6 +934,7 @@
       const fbUp = m.feedback === 'like' ? ' on' : '';
       const fbDown = m.feedback === 'unlike' ? ' on dislike' : '';
       const isLocal = String(m.id || '').startsWith('local-');
+      const feedbackPending = !!(m.persist_pending || m.persist_failed);
       const fbReason = feedbackReasonSummary(m.feedback_reason);
       return '<div class="chat-row agent">' +
         '<div class="chat-avatar">' + iconChat() + '</div>' +
@@ -918,7 +946,7 @@
           (isLocal && !m.stopped ? '' :
           '<div class="chat-acts">' +
             '<button class="chat-act" data-copy="' + encodeURIComponent(m.content) + '" title="复制">' + iconCopy() + '</button>' +
-            (isLocal
+            (feedbackPending || isLocal
               ? '<span class="chat-fb-reason">反馈同步中…</span>'
               : '<button class="chat-act' + fbUp + '" data-fb="like" data-mid="' + escapeHtml(m.id) + '" title="点赞">' + iconUp() + '</button>' +
                 '<button class="chat-act' + fbDown + '" data-fb="unlike" data-mid="' + escapeHtml(m.id) + '" title="点踩">' + iconDown() + '</button>' +

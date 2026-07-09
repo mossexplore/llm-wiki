@@ -105,3 +105,52 @@ def test_chat_send_message_keeps_custom_session_title(client):
     assert response.status_code == 200
     [stored] = [item for item in chat_store.list_sessions() if item["id"] == session["id"]]
     assert stored["title"] == "我的自定义标题"
+
+
+def test_stop_message_is_idempotent_by_message_id(client):
+    session = chat_store.create_session("s")
+
+    first = client.post(
+        f"/api/chat/sessions/{session['id']}/messages/stop",
+        json={"content": "partial", "message_id": "assistant-1", "elapsed_ms": 1},
+    )
+    second = client.post(
+        f"/api/chat/sessions/{session['id']}/messages/stop",
+        json={"content": "partial", "message_id": "assistant-1", "elapsed_ms": 1},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["result"]["data"]["message"]["id"] == "assistant-1"
+    assert second.json()["result"]["data"]["deduped"] is True
+    messages = [m for m in chat_store.get_messages(session["id"]) if m["role"] == "assistant"]
+    assert len(messages) == 1
+
+
+def test_stop_message_prefers_active_stream_snapshot(client):
+    session = chat_store.create_session("s")
+    active = chat_api.ActiveChatStream(
+        session_id=session["id"],
+        user_id=None,
+        message_id="assistant-active",
+        request_id="req",
+        started=0,
+        acc="server partial",
+        source="wiki",
+        mode="exact",
+        retrieval_ms=2,
+    )
+    chat_api.register_active_stream(active)
+
+    response = client.post(
+        f"/api/chat/sessions/{session['id']}/messages/stop",
+        json={"content": "client partial", "message_id": "assistant-active", "elapsed_ms": 1},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["result"]["data"]
+    assert data["message"]["content"] == "server partial"
+    assert data["message"]["answer_source"] == "wiki"
+    assert data["message"]["retrieval_mode"] == "exact"
+    assert active.cancel_event.is_set()
+    chat_api.unregister_active_stream("assistant-active", active)
