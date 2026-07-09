@@ -1,6 +1,6 @@
 from typing import Annotated, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints
 
 
 class PreviewReq(BaseModel):
@@ -70,9 +70,8 @@ class ChatMessageReq(BaseModel):
 
 
 class ChatStopReq(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     message_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    user_id: Optional[str] = None
 
 
 class FeedbackReasonReq(BaseModel):

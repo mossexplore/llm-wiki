@@ -150,22 +150,40 @@ def test_stop_message_requires_message_id(client):
     assert response.status_code == 422
 
 
-def test_stop_message_rejects_redundant_fields(client):
+def test_stop_message_ignores_redundant_fields(client):
     session = chat_store.create_session("s", user_id="user-1")
+    active = chat_api.ActiveChatStream(
+        session_id=session["id"],
+        user_id="user-1",
+        message_id="assistant-full",
+        request_id="req",
+        started=0,
+        acc="server partial",
+        source="wiki",
+        mode="exact",
+        refs=[{"id": "case-1", "title": "Case 1"}],
+        retrieval_ms=20,
+        model_wait_ms=30,
+        first_delta_ms=40,
+        total_ms=120,
+        message_count=6,
+        prompt_chars=512,
+    )
+    chat_api.register_active_stream(active)
     request_body = {
-        "content": "partial answer",
+        "content": "client partial",
         "message_id": "assistant-full",
         "user_id": "user-1",
-        "answer_source": "wiki",
-        "retrieval_mode": "exact",
-        "refs": [{"id": "case-1", "title": "Case 1"}],
-        "elapsed_ms": 100,
-        "retrieval_ms": 20,
-        "model_wait_ms": 30,
-        "first_delta_ms": 40,
-        "total_ms": 120,
-        "message_count": 6,
-        "prompt_chars": 512,
+        "answer_source": "llm",
+        "retrieval_mode": "none",
+        "refs": [],
+        "elapsed_ms": 1,
+        "retrieval_ms": 1,
+        "model_wait_ms": 1,
+        "first_delta_ms": 1,
+        "total_ms": 1,
+        "message_count": 1,
+        "prompt_chars": 1,
     }
 
     response = client.post(
@@ -173,7 +191,20 @@ def test_stop_message_rejects_redundant_fields(client):
         json=request_body,
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    message = response.json()["result"]["data"]["message"]
+    assert message["content"] == "server partial"
+    assert message["answer_source"] == "wiki"
+    assert message["retrieval_mode"] == "exact"
+    assert message["refs"] == [{"id": "case-1", "title": "Case 1"}]
+    assert message["elapsed_ms"] == 120
+    assert message["retrieval_ms"] == 20
+    assert message["model_wait_ms"] == 30
+    assert message["first_delta_ms"] == 40
+    assert message["total_ms"] == 120
+    assert message["message_count"] == 6
+    assert message["prompt_chars"] == 512
+    chat_api.unregister_active_stream("assistant-full", active)
 
 
 def test_stop_message_accepts_message_id_only(client):
@@ -218,6 +249,51 @@ def test_stop_message_accepts_message_id_only(client):
     assert message["message_count"] == 6
     assert message["prompt_chars"] == 512
     chat_api.unregister_active_stream("assistant-minimal", active)
+
+
+def test_stop_message_accepts_matching_user_id(client):
+    session = chat_store.create_session("s", user_id="user-1")
+    active = chat_api.ActiveChatStream(
+        session_id=session["id"],
+        user_id="user-1",
+        message_id="assistant-user",
+        request_id="req",
+        started=0,
+        acc="server partial",
+    )
+    chat_api.register_active_stream(active)
+
+    response = client.post(
+        f"/api/chat/sessions/{session['id']}/messages/stop",
+        json={"message_id": "assistant-user", "user_id": "user-1"},
+    )
+
+    assert response.status_code == 200
+    message = response.json()["result"]["data"]["message"]
+    assert message["id"] == "assistant-user"
+    assert message["user_id"] == "user-1"
+    chat_api.unregister_active_stream("assistant-user", active)
+
+
+def test_stop_message_rejects_mismatched_user_id(client):
+    session = chat_store.create_session("s", user_id="user-1")
+    active = chat_api.ActiveChatStream(
+        session_id=session["id"],
+        user_id="user-1",
+        message_id="assistant-user",
+        request_id="req",
+        started=0,
+        acc="server partial",
+    )
+    chat_api.register_active_stream(active)
+
+    response = client.post(
+        f"/api/chat/sessions/{session['id']}/messages/stop",
+        json={"message_id": "assistant-user", "user_id": "user-2"},
+    )
+
+    assert response.status_code == 404
+    chat_api.unregister_active_stream("assistant-user", active)
 
 
 def test_stop_message_prefers_active_stream_snapshot(client):

@@ -552,7 +552,8 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 @router.post("/api/chat/sessions/{session_id}/messages/stop")
 def chat_stop_message(session_id: str, req: ChatStopReq):
     """停止生成时立即保存当前 assistant 片段,让前端马上拿到可反馈的 message id。"""
-    if not chat_store.session_exists(session_id):
+    user_id = (req.user_id or "").strip() or None
+    if not chat_store.session_exists(session_id, user_id=user_id):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
 
     message_id = req.message_id
@@ -561,7 +562,7 @@ def chat_stop_message(session_id: str, req: ChatStopReq):
         return success({"ok": True, "message": existing_by_id, "deduped": True})
 
     active = get_active_stream(message_id)
-    if not active or active.session_id != session_id:
+    if not active or active.session_id != session_id or (user_id and active.user_id != user_id):
         raise_api_error(ErrorCode.CHAT_MESSAGE_NOT_FOUND, "流不存在或已结束")
 
     active.cancel_event.set()
