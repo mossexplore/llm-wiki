@@ -12,8 +12,10 @@ from llm_wiki.backend.api import chat as chat_api
 
 @pytest.fixture(autouse=True)
 def _clear_chat_store():
+    chat_api.ACTIVE_CHAT_STREAMS.clear()
     chat_store.clear_sessions()
     yield
+    chat_api.ACTIVE_CHAT_STREAMS.clear()
     chat_store.clear_sessions()
 
 
@@ -109,14 +111,23 @@ def test_chat_send_message_keeps_custom_session_title(client):
 
 def test_stop_message_is_idempotent_by_message_id(client):
     session = chat_store.create_session("s")
+    active = chat_api.ActiveChatStream(
+        session_id=session["id"],
+        user_id=None,
+        message_id="assistant-1",
+        request_id="req",
+        started=0,
+        acc="partial",
+    )
+    chat_api.register_active_stream(active)
 
     first = client.post(
         f"/api/chat/sessions/{session['id']}/messages/stop",
-        json={"content": "partial", "message_id": "assistant-1", "elapsed_ms": 1},
+        json={"message_id": "assistant-1"},
     )
     second = client.post(
         f"/api/chat/sessions/{session['id']}/messages/stop",
-        json={"content": "partial", "message_id": "assistant-1", "elapsed_ms": 1},
+        json={"message_id": "assistant-1"},
     )
 
     assert first.status_code == 200
@@ -125,6 +136,7 @@ def test_stop_message_is_idempotent_by_message_id(client):
     assert second.json()["result"]["data"]["deduped"] is True
     messages = [m for m in chat_store.get_messages(session["id"]) if m["role"] == "assistant"]
     assert len(messages) == 1
+    chat_api.unregister_active_stream("assistant-1", active)
 
 
 def test_stop_message_requires_message_id(client):
@@ -138,7 +150,7 @@ def test_stop_message_requires_message_id(client):
     assert response.status_code == 422
 
 
-def test_stop_message_accepts_full_request_body(client):
+def test_stop_message_rejects_redundant_fields(client):
     session = chat_store.create_session("s", user_id="user-1")
     request_body = {
         "content": "partial answer",
@@ -161,21 +173,51 @@ def test_stop_message_accepts_full_request_body(client):
         json=request_body,
     )
 
+    assert response.status_code == 422
+
+
+def test_stop_message_accepts_message_id_only(client):
+    session = chat_store.create_session("s", user_id="user-1")
+    active = chat_api.ActiveChatStream(
+        session_id=session["id"],
+        user_id="user-1",
+        message_id="assistant-minimal",
+        request_id="req",
+        started=0,
+        acc="server partial",
+        source="wiki",
+        mode="exact",
+        refs=[{"id": "case-1", "title": "Case 1"}],
+        retrieval_ms=20,
+        model_wait_ms=30,
+        first_delta_ms=40,
+        total_ms=120,
+        message_count=6,
+        prompt_chars=512,
+    )
+    chat_api.register_active_stream(active)
+
+    response = client.post(
+        f"/api/chat/sessions/{session['id']}/messages/stop",
+        json={"message_id": "assistant-minimal"},
+    )
+
     assert response.status_code == 200
     message = response.json()["result"]["data"]["message"]
-    assert message["id"] == request_body["message_id"]
-    assert message["user_id"] == request_body["user_id"]
-    assert message["content"] == request_body["content"]
-    assert message["answer_source"] == request_body["answer_source"]
-    assert message["retrieval_mode"] == request_body["retrieval_mode"]
-    assert message["refs"] == request_body["refs"]
-    assert message["elapsed_ms"] == request_body["total_ms"]
-    assert message["retrieval_ms"] == request_body["retrieval_ms"]
-    assert message["model_wait_ms"] == request_body["model_wait_ms"]
-    assert message["first_delta_ms"] == request_body["first_delta_ms"]
-    assert message["total_ms"] == request_body["total_ms"]
-    assert message["message_count"] == request_body["message_count"]
-    assert message["prompt_chars"] == request_body["prompt_chars"]
+    assert message["id"] == "assistant-minimal"
+    assert message["user_id"] == "user-1"
+    assert message["content"] == "server partial"
+    assert message["answer_source"] == "wiki"
+    assert message["retrieval_mode"] == "exact"
+    assert message["refs"] == [{"id": "case-1", "title": "Case 1"}]
+    assert message["elapsed_ms"] == 120
+    assert message["retrieval_ms"] == 20
+    assert message["model_wait_ms"] == 30
+    assert message["first_delta_ms"] == 40
+    assert message["total_ms"] == 120
+    assert message["message_count"] == 6
+    assert message["prompt_chars"] == 512
+    chat_api.unregister_active_stream("assistant-minimal", active)
 
 
 def test_stop_message_prefers_active_stream_snapshot(client):
@@ -195,7 +237,7 @@ def test_stop_message_prefers_active_stream_snapshot(client):
 
     response = client.post(
         f"/api/chat/sessions/{session['id']}/messages/stop",
-        json={"content": "client partial", "message_id": "assistant-active", "elapsed_ms": 1},
+        json={"message_id": "assistant-active"},
     )
 
     assert response.status_code == 200

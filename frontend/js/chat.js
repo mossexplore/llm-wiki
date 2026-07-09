@@ -446,12 +446,23 @@
       const status = Object.assign({}, streamState.status || {}, { stage: 'stopped' });
       const controller = chatStreamAbortControllers[sessionId];
       delete chatStreamAbortControllers[sessionId];
+      const messageId = streamState.messageId || '';
+      const persistPromise = messageId
+        ? persistStoppedChatMessage(sessionId, messageId)
+        : Promise.resolve(null);
+      if (messageId) {
+        chatStoppedPersistPromises[messageId] = persistPromise;
+        persistPromise.finally(() => {
+          if (chatStoppedPersistPromises[messageId] === persistPromise) {
+            delete chatStoppedPersistPromises[messageId];
+          }
+        });
+      }
       if (controller) controller.abort();
       stopChatLatencyTimer();
       streamState.streaming = false;
 
       if (partial.trim() && state.chatActive === sessionId && !state.chatMessagesLoading) {
-        const messageId = streamState.messageId || '';
         const localId = messageId || ('local-stopped-' + Date.now());
         const stoppedMessage = {
           role: 'assistant',
@@ -474,8 +485,6 @@
         syncActiveChatStreamState();
         render();
 
-        const persistPromise = persistStoppedChatMessage(sessionId, partial, meta, status, messageId);
-        if (messageId) chatStoppedPersistPromises[messageId] = persistPromise;
         const persisted = await persistPromise;
         if (messageId && chatStoppedPersistPromises[messageId] === persistPromise) {
           delete chatStoppedPersistPromises[messageId];
@@ -503,24 +512,11 @@
       showToast(partial.trim() ? '已停止生成' : '已停止请求');
     }
 
-    async function persistStoppedChatMessage(sessionId, partial, meta, status, messageId) {
+    async function persistStoppedChatMessage(sessionId, messageId) {
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(sessionId) + '/messages/stop', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: partial,
-            message_id: messageId || undefined,
-            answer_source: meta && meta.source,
-            retrieval_mode: meta && meta.mode,
-            refs: meta && meta.refs || [],
-            elapsed_ms: status && status.elapsed_ms,
-            retrieval_ms: status && status.retrieval_ms,
-            model_wait_ms: status && status.model_wait_ms,
-            first_delta_ms: status && status.first_delta_ms,
-            total_ms: status && status.total_ms,
-            message_count: status && status.message_count,
-            prompt_chars: status && status.prompt_chars
-          })
+          body: JSON.stringify({ message_id: messageId })
         });
         const payload = await r.json().catch(() => ({}));
         if (!r.ok) return null;

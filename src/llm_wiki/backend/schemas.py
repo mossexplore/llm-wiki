@@ -1,6 +1,6 @@
 from typing import Annotated, Optional, Union
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class PreviewReq(BaseModel):
@@ -70,19 +70,9 @@ class ChatMessageReq(BaseModel):
 
 
 class ChatStopReq(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     message_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-    content: str = ""
-    user_id: Optional[str] = None
-    answer_source: Optional[str] = None
-    retrieval_mode: Optional[str] = None
-    refs: list[dict] = Field(default_factory=list)
-    elapsed_ms: Optional[int] = Field(default=None, gt=0)
-    retrieval_ms: Optional[int] = Field(default=None, gt=0)
-    model_wait_ms: Optional[int] = Field(default=None, gt=0)
-    first_delta_ms: Optional[int] = Field(default=None, gt=0)
-    total_ms: Optional[int] = Field(default=None, gt=0)
-    message_count: Optional[int] = None
-    prompt_chars: Optional[int] = None
 
 
 class FeedbackReasonReq(BaseModel):

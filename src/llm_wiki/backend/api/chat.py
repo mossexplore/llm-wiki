@@ -552,61 +552,57 @@ def chat_send_message(session_id: str, req: ChatMessageReq):
 @router.post("/api/chat/sessions/{session_id}/messages/stop")
 def chat_stop_message(session_id: str, req: ChatStopReq):
     """停止生成时立即保存当前 assistant 片段,让前端马上拿到可反馈的 message id。"""
-    user_id = (req.user_id or "").strip() or None
-    if not chat_store.session_exists(session_id, user_id=user_id):
+    if not chat_store.session_exists(session_id):
         raise_api_error(ErrorCode.CHAT_SESSION_NOT_FOUND)
 
-    message_id = (req.message_id or "").strip() or None
-    active = get_active_stream(message_id)
-    active_snapshot = {}
-    if active and active.session_id == session_id:
-        active.cancel_event.set()
-        with active.lock:
-            active_snapshot = {
-                "content": active.acc,
-                "source": active.source,
-                "mode": active.mode,
-                "refs": active.refs,
-                "retrieval_ms": active.retrieval_ms,
-                "model_wait_ms": active.model_wait_ms,
-                "first_delta_ms": active.first_delta_ms,
-                "total_ms": active.total_ms,
-                "message_count": active.message_count,
-                "prompt_chars": active.prompt_chars,
-                "stream_obj": active.stream_obj,
-                "elapsed_ms": int((time.perf_counter() - active.started) * 1000),
-            }
-        close_stream_obj(active_snapshot.get("stream_obj"))
-
-    content = (active_snapshot.get("content") or req.content or "").strip()
-    if not content:
-        raise_api_error(ErrorCode.CHAT_MESSAGE_EMPTY)
-
+    message_id = req.message_id
     existing_by_id = _message_by_id(session_id, message_id)
     if existing_by_id:
         return success({"ok": True, "message": existing_by_id, "deduped": True})
+
+    active = get_active_stream(message_id)
+    if not active or active.session_id != session_id:
+        raise_api_error(ErrorCode.CHAT_MESSAGE_NOT_FOUND, "流不存在或已结束")
+
+    active.cancel_event.set()
+    with active.lock:
+        active_snapshot = {
+            "content": active.acc,
+            "source": active.source,
+            "mode": active.mode,
+            "refs": active.refs,
+            "retrieval_ms": active.retrieval_ms,
+            "model_wait_ms": active.model_wait_ms,
+            "first_delta_ms": active.first_delta_ms,
+            "total_ms": active.total_ms,
+            "message_count": active.message_count,
+            "prompt_chars": active.prompt_chars,
+            "stream_obj": active.stream_obj,
+            "elapsed_ms": int((time.perf_counter() - active.started) * 1000),
+            "user_id": active.user_id,
+        }
+    close_stream_obj(active_snapshot.get("stream_obj"))
+
+    content = (active_snapshot.get("content") or "").strip()
+    if not content:
+        raise_api_error(ErrorCode.CHAT_MESSAGE_EMPTY)
 
     existing = _matching_recent_assistant(session_id, content)
     if existing:
         return success({"ok": True, "message": existing, "deduped": True})
 
-    total_ms = (
-        req.total_ms
-        or active_snapshot.get("total_ms")
-        or req.elapsed_ms
-        or active_snapshot.get("elapsed_ms")
-    )
+    total_ms = active_snapshot.get("total_ms") or active_snapshot.get("elapsed_ms")
     metrics = MessageMetrics(
-        answer_source=req.answer_source or active_snapshot.get("source") or "llm",
-        retrieval_mode=req.retrieval_mode or active_snapshot.get("mode") or "none",
-        refs=req.refs or active_snapshot.get("refs") or [],
+        answer_source=active_snapshot.get("source") or "llm",
+        retrieval_mode=active_snapshot.get("mode") or "none",
+        refs=active_snapshot.get("refs") or [],
         elapsed_ms=total_ms,
-        retrieval_ms=req.retrieval_ms or active_snapshot.get("retrieval_ms"),
-        model_wait_ms=req.model_wait_ms or active_snapshot.get("model_wait_ms"),
-        first_delta_ms=req.first_delta_ms or active_snapshot.get("first_delta_ms"),
+        retrieval_ms=active_snapshot.get("retrieval_ms"),
+        model_wait_ms=active_snapshot.get("model_wait_ms"),
+        first_delta_ms=active_snapshot.get("first_delta_ms"),
         total_ms=total_ms,
-        message_count=req.message_count or active_snapshot.get("message_count"),
-        prompt_chars=req.prompt_chars or active_snapshot.get("prompt_chars"),
+        message_count=active_snapshot.get("message_count"),
+        prompt_chars=active_snapshot.get("prompt_chars"),
     )
     try:
         saved = chat_store.add_message(
@@ -614,7 +610,7 @@ def chat_stop_message(session_id: str, req: ChatStopReq):
             "assistant",
             content,
             metrics,
-            user_id=user_id,
+            user_id=active_snapshot.get("user_id"),
             message_id=message_id,
         )
     except Exception:
