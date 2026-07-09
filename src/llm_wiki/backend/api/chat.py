@@ -562,7 +562,9 @@ def chat_stop_message(session_id: str, req: ChatStopReq):
         return success({"ok": True, "message": existing_by_id, "deduped": True})
 
     active = get_active_stream(message_id)
-    if not active or active.session_id != session_id or (user_id and active.user_id != user_id):
+    if not active or active.session_id != session_id:
+        raise_api_error(ErrorCode.CHAT_MESSAGE_NOT_FOUND, "流不存在或已结束")
+    if user_id and active.user_id != user_id:
         raise_api_error(ErrorCode.CHAT_MESSAGE_NOT_FOUND, "流不存在或已结束")
 
     active.cancel_event.set()
