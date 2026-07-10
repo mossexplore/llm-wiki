@@ -256,7 +256,31 @@
         const last = txt.lastIndexOf('}');
         if (first !== -1 && last > first) txt = txt.slice(first, last + 1).trim();
       }
-      return txt;
+      // JSON 只允许普通空格、Tab、换行和回车作为结构空白。模型偶尔会
+      // 输出 NBSP(U+00A0) 等 Unicode 空白；仅在字符串外转换，保留字段值。
+      let out = '';
+      let inString = false;
+      let escaped = false;
+      for (const ch of txt) {
+        if (inString) {
+          out += ch;
+          if (escaped) escaped = false;
+          else if (ch === '\\') escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          out += ch;
+        } else if (ch === '\ufeff') {
+          // Remove a BOM outside string values; it is not valid JSON whitespace.
+        } else if (/\s/u.test(ch) && !/[ \t\n\r]/.test(ch)) {
+          out += ' ';
+        } else {
+          out += ch;
+        }
+      }
+      return out;
     }
 
     function logPreviewFailure(info) {

@@ -68,3 +68,9 @@ def test_normalize_json_text_strips_fence_and_prose():
     assert normalize_json_text('```json\n{"a": 1}\n```') == '{"a": 1}'
     assert normalize_json_text('前言 {"a": 1} 后记') == '{"a": 1}'
     assert normalize_json_text('```\n{"x": 2}\n```') == '{"x": 2}'
+
+
+def test_normalize_json_text_replaces_nonstandard_structural_whitespace_only():
+    text = '{\u00a0"title": "保留\u00a0字段值",\u00a0"tags": ["npu"]\u00a0}'
+
+    assert normalize_json_text(text) == '{ "title": "保留\u00a0字段值", "tags": ["npu"] }'

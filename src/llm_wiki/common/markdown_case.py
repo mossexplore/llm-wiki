@@ -64,7 +64,13 @@ def annotate(status: str, confidence: str) -> str:
 
 
 def normalize_json_text(text: str) -> str:
-    """剥离 ``` ```json ``` ``` 代码围栏并裁出最外层 ``{...}``,供解析模型输出。"""
+    """规范化模型 JSON 输出，供严格 JSON 解析器消费。
+
+    除了剥离代码围栏和额外说明外，还会将 JSON 字符串外的非标准
+    Unicode 空白（例如不间断空格 ``U+00A0``）转换为普通空格。模型
+    偶尔会用这类字符缩进；它们不是 JSON 允许的空白字符。字符串值
+    内的字符保持原样，避免改写案例内容。
+    """
     txt = (text or "").strip()
     txt = _FENCE_OPEN.sub("", txt).strip()
     txt = _FENCE_CLOSE.sub("", txt).strip()
@@ -75,4 +81,33 @@ def normalize_json_text(text: str) -> str:
             start = first
             end = last + 1
             txt = txt[start:end].strip()
-    return txt
+    return _normalize_json_whitespace(txt)
+
+
+def _normalize_json_whitespace(text: str) -> str:
+    """仅处理 JSON 字符串外不被 RFC 8259 允许的空白字符。"""
+    out = []
+    in_string = False
+    escaped = False
+    for char in text:
+        if in_string:
+            out.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+            out.append(char)
+        elif char == "\ufeff":
+            # UTF-8 BOM 也不属于 JSON 的合法空白；仅在结构区移除。
+            continue
+        elif char.isspace() and char not in " \t\n\r":
+            out.append(" ")
+        else:
+            out.append(char)
+    return "".join(out)
